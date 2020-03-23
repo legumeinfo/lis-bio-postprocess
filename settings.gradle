@@ -1,0 +1,10 @@
+rootProject.name = 'bio-postprocess-lis'
+
+include	':bio-postprocess-lis-create-protein-gene-references',
+	':bio-postprocess-lis-create-cds-references',
+	':bio-postprocess-lis-populate-publications'
+
+project(':bio-postprocess-lis-create-protein-gene-references').projectDir  = new File(settingsDir, 'lis-create-protein-gene-references')
+project(':bio-postprocess-lis-create-cds-references').projectDir           = new File(settingsDir, 'lis-create-cds-references')
+project(':bio-postprocess-lis-populate-publications').projectDir           = new File(settingsDir, 'lis-populate-publications')
+
