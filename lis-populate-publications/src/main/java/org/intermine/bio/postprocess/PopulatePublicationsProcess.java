@@ -199,7 +199,7 @@ public class PopulatePublicationsProcess extends PostProcessor {
                     pages = wq.getPage();
                     doi = wq.getDOI();
                     authors = wq.getAuthors();
-                    if (authors.size()>0) {
+                    if (authors!=null && authors.size()>0) {
                         JSONObject firstAuthorObject = (JSONObject) authors.get(0);
                         firstAuthor = firstAuthorObject.get("family")+", "+firstAuthorObject.get("given");
                     }

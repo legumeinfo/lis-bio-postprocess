@@ -1,0 +1,3 @@
+#!/bin/sh
+cp /home/shokin/java/ncgr/crossref/build/libs/ncgr-crossref.jar lis-populate-publications/libs
+cp /home/shokin/java/ncgr/pubmed/build/libs/ncgr-pubmed.jar lis-populate-publications/libs
