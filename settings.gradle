@@ -6,7 +6,8 @@ include	':bio-postprocess-lis-create-gene-protein-collections',
 	':bio-postprocess-lis-create-cds-transcript-references',
 	':bio-postprocess-lis-create-transcript-gene-references',
 	':bio-postprocess-lis-create-transcript-protein-references',
-	':bio-postprocess-lis-populate-publications'
+	':bio-postprocess-lis-populate-publications',
+	':bio-postprocess-lis-create-qtl-gene-collections'
 
 project(':bio-postprocess-lis-create-gene-protein-collections').projectDir      = new File(settingsDir, 'lis-create-gene-protein-collections')
 project(':bio-postprocess-lis-create-cds-gene-references').projectDir           = new File(settingsDir, 'lis-create-cds-gene-references')
@@ -15,4 +16,5 @@ project(':bio-postprocess-lis-create-cds-transcript-references').projectDir     
 project(':bio-postprocess-lis-create-transcript-gene-references').projectDir    = new File(settingsDir, 'lis-create-transcript-gene-references')
 project(':bio-postprocess-lis-create-transcript-protein-references').projectDir = new File(settingsDir, 'lis-create-transcript-protein-references')
 project(':bio-postprocess-lis-populate-publications').projectDir                = new File(settingsDir, 'lis-populate-publications')
+project(':bio-postprocess-lis-create-qtl-gene-collections').projectDir          = new File(settingsDir, 'lis-create-qtl-gene-collections')
 
