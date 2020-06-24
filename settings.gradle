@@ -1,20 +1,20 @@
 rootProject.name = 'bio-postprocess-lis'
 
-include	':bio-postprocess-lis-create-gene-protein-collections',
-	':bio-postprocess-lis-create-cds-gene-references',
-	':bio-postprocess-lis-create-cds-protein-references',
-	':bio-postprocess-lis-create-cds-transcript-references',
-	':bio-postprocess-lis-create-transcript-gene-references',
-	':bio-postprocess-lis-create-transcript-protein-references',
+include	':bio-postprocess-lis-populate-gene-protein-collections',
+	':bio-postprocess-lis-populate-cds-gene-references',
+	':bio-postprocess-lis-populate-cds-protein-references',
+	':bio-postprocess-lis-populate-cds-transcript-references',
+	':bio-postprocess-lis-populate-transcript-gene-references',
+	':bio-postprocess-lis-populate-transcript-protein-references',
 	':bio-postprocess-lis-populate-publications',
-	':bio-postprocess-lis-create-qtl-gene-collections'
+	':bio-postprocess-lis-populate-qtl-gene-collections'
 
-project(':bio-postprocess-lis-create-gene-protein-collections').projectDir      = new File(settingsDir, 'lis-create-gene-protein-collections')
-project(':bio-postprocess-lis-create-cds-gene-references').projectDir           = new File(settingsDir, 'lis-create-cds-gene-references')
-project(':bio-postprocess-lis-create-cds-protein-references').projectDir        = new File(settingsDir, 'lis-create-cds-protein-references')
-project(':bio-postprocess-lis-create-cds-transcript-references').projectDir     = new File(settingsDir, 'lis-create-cds-transcript-references')
-project(':bio-postprocess-lis-create-transcript-gene-references').projectDir    = new File(settingsDir, 'lis-create-transcript-gene-references')
-project(':bio-postprocess-lis-create-transcript-protein-references').projectDir = new File(settingsDir, 'lis-create-transcript-protein-references')
+project(':bio-postprocess-lis-populate-gene-protein-collections').projectDir      = new File(settingsDir, 'lis-populate-gene-protein-collections')
+project(':bio-postprocess-lis-populate-cds-gene-references').projectDir           = new File(settingsDir, 'lis-populate-cds-gene-references')
+project(':bio-postprocess-lis-populate-cds-protein-references').projectDir        = new File(settingsDir, 'lis-populate-cds-protein-references')
+project(':bio-postprocess-lis-populate-cds-transcript-references').projectDir     = new File(settingsDir, 'lis-populate-cds-transcript-references')
+project(':bio-postprocess-lis-populate-transcript-gene-references').projectDir    = new File(settingsDir, 'lis-populate-transcript-gene-references')
+project(':bio-postprocess-lis-populate-transcript-protein-references').projectDir = new File(settingsDir, 'lis-populate-transcript-protein-references')
 project(':bio-postprocess-lis-populate-publications').projectDir                = new File(settingsDir, 'lis-populate-publications')
-project(':bio-postprocess-lis-create-qtl-gene-collections').projectDir          = new File(settingsDir, 'lis-create-qtl-gene-collections')
+project(':bio-postprocess-lis-populate-qtl-gene-collections').projectDir          = new File(settingsDir, 'lis-populate-qtl-gene-collections')
 
