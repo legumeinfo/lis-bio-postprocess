@@ -8,6 +8,7 @@ package org.intermine.bio.postprocess;
  * information or http://www.gnu.org/copyleft/lesser.html.
  *
  */
+import java.io.IOException;
 import java.text.DecimalFormat;
 import java.util.Collections;
 import java.util.Iterator;
@@ -15,6 +16,9 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.HashSet;
+
+import javax.xml.parsers.ParserConfigurationException;
+import org.xml.sax.SAXException;
 
 import org.intermine.model.bio.Author;
 import org.intermine.model.bio.Publication;
@@ -43,6 +47,7 @@ import org.apache.log4j.Logger;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.JSONValue;
+import org.json.simple.parser.ParseException;
 
 import org.ncgr.crossref.WorksQuery;
 import org.ncgr.pubmed.PubMedSummary;
@@ -70,250 +75,222 @@ public class PopulatePublicationsProcess extends PostProcessor {
 
     /**
      * {@inheritDoc}
-     *
-     * Main method
-     *
-     * @throws ObjectStoreException if the objectstore throws an exception
      */
-    public void postProcess() throws ObjectStoreException {
-        try {
-            
-            // delete existing Author objects, first loading them into a collection
-            Query qAuthor = new Query();
-            qAuthor.setDistinct(true);
-            ConstraintSet csAuthor = new ConstraintSet(ConstraintOp.AND);
-            // 0 Author
-            QueryClass qcAuthor = new QueryClass(Author.class);
-            qAuthor.addToSelect(qcAuthor);
-            qAuthor.addFrom(qcAuthor);
-            Set<Author> authorSet = new HashSet<Author>();
-            Results authorResults = osw.getObjectStore().execute(qAuthor);
-            Iterator<?> authorIter = authorResults.iterator();
-            while (authorIter.hasNext()) {
-                ResultsRow<?> rr = (ResultsRow<?>) authorIter.next();
-                authorSet.add((Author)rr.get(0));
-            }
-            // delete them one by one (because bulk deletion is broken)
-            // NOTE: this does not delete authorspublications records. That is a bug IMO.
-            osw.beginTransaction();
-            for (Author author : authorSet) {
-                osw.delete(author);
-            }
-            osw.commitTransaction();
-        
-            // now query the publications
-            Query qPub = new Query();
-            qPub.setDistinct(true);
-
-            // 0 Publication
-            QueryClass qcPub = new QueryClass(Publication.class);
-            qPub.addToSelect(qcPub);
-            qPub.addFrom(qcPub);
-
-            // execute the query
-            Results pubResults = osw.getObjectStore().execute(qPub);
-            Iterator<?> pubIter = pubResults.iterator();
-            while (pubIter.hasNext()) {
-
-                LOG.info("------------------------------------------------");
-
-                ResultsRow<?> rrPub = (ResultsRow<?>) pubIter.next();
-                Publication pub = (Publication) rrPub.get(0);
-
-                // field values
-                String title = stringOrNull(pub.getFieldValue("title"));
-                String firstAuthor = stringOrNull(pub.getFieldValue("firstAuthor"));
-                // core IM model does not contain lastAuthor
-                // String lastAuthor = stringOrNull(pub.getFieldValue("lastAuthor"));
-                String month = stringOrNull(pub.getFieldValue("month"));
-                int year = intOrZero(pub.getFieldValue("year"));
-                String journal = stringOrNull(pub.getFieldValue("journal"));
-                String volume = stringOrNull(pub.getFieldValue("volume"));
-                String issue = stringOrNull(pub.getFieldValue("issue"));
-                String pages = stringOrNull(pub.getFieldValue("pages"));
-                String abstractText = stringOrNull(pub.getFieldValue("abstractText"));
-                int pubMedId = intOrZero(pub.getFieldValue("pubMedId"));
-                String doi = stringOrNull(pub.getFieldValue("doi"));
-
-                // try to snag the PMID and DOI if we have just a title
-                if (doi==null && pubMedId==0 && title!=null) {
-                    try {
-                        // query PubMed for PMID from title; add DOI if it's there
-                        PubMedSummary summary = new PubMedSummary(title, API_KEY);
-                        if (summary.id==0) {
-                            LOG.info("PMID not found from title:"+title);
-                        } else {
-                            pubMedId = summary.id;
-                            LOG.info("PMID found from title:"+pubMedId+":"+title);
-                            LOG.info("Matching title:"+summary.title);
-                            if (summary.doi!=null) {
-                                doi = summary.doi;
-                                LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
-                            }
-                        }
-                    } catch (Exception e) {
-                        LOG.error(e.getMessage());
-                    }
-                } else if (doi==null && pubMedId!=0) {
-                    try {
-                        // query PubMed for data from PMID, update everything in case CrossRef fails
-                        PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
-                        if (summary.doi!=null) {
-                            doi = summary.doi;
-                            LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
-                        }
-                    } catch (Exception e) {
-                        LOG.error(e.getMessage());
-                    }                        
-                }
-
-                // query CrossRef entry from DOI or title/firstAuthor
-                WorksQuery wq = null;
-                boolean crossRefSuccess = false;
-                JSONArray authors = null;
-                if (doi!=null) {
-                    wq = new WorksQuery(doi);
-                    crossRefSuccess = (wq.getStatus()!=null && wq.getStatus().equals("ok"));
-                } else if (firstAuthor!=null || title!=null) {
-                    wq = new WorksQuery(firstAuthor, title);
-                    crossRefSuccess = wq.isTitleMatched();
-                    if (crossRefSuccess) {
-                        LOG.info("DOI found from firstAuthor/title:"+firstAuthor+"/"+title);
-			LOG.info("Matching title:"+wq.getTitle());
-                    }
-                }
-
-                if (crossRefSuccess) {
-
-                    // update attributes from CrossRef if found
-                    title = wq.getTitle();
-                    month = String.valueOf(wq.getIssueMonth());
-                    year = wq.getIssueYear();
-                    if (wq.getShortContainerTitle()!=null) {
-                        journal = wq.getShortContainerTitle();
-                    } else if (wq.getContainerTitle()!=null) {
-                        journal = wq.getContainerTitle();
-                    }
-                    volume = wq.getVolume();
-                    issue = wq.getIssue();
-                    pages = wq.getPage();
-                    doi = wq.getDOI();
-                    authors = wq.getAuthors();
-                    if (authors!=null && authors.size()>0) {
-                        JSONObject firstAuthorObject = (JSONObject) authors.get(0);
-                        firstAuthor = firstAuthorObject.get("family")+", "+firstAuthorObject.get("given");
-                    }
-                    // core IM model does not contain lastAuthor
-                    // if (authors.size()>1) {
-                    //     JSONObject lastAuthorObject = (JSONObject) authors.get(authors.size()-1);
-                    //     lastAuthor = lastAuthorObject.get("family")+", "+lastAuthorObject.get("given");
-                    // }
-
-                    // update publication object
-                    Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
-                    if (title!=null) tempPub.setFieldValue("title", title);
-                    if (firstAuthor!=null) tempPub.setFieldValue("firstAuthor", firstAuthor);
-                    if (month!=null && !month.equals("0")) tempPub.setFieldValue("month", month);
-                    if (year>0) tempPub.setFieldValue("year", year);
-                    if (journal!=null) tempPub.setFieldValue("journal", journal);
-                    if (volume!=null) tempPub.setFieldValue("volume", volume);
-                    if (issue!=null) tempPub.setFieldValue("issue", issue);
-                    if (pages!=null) tempPub.setFieldValue("pages", pages);
-                    if (pubMedId>0) tempPub.setFieldValue("pubMedId", String.valueOf(pubMedId));
-                    if (doi!=null) tempPub.setFieldValue("doi", doi);
-                    // core IM model does not contain lastAuthor
-                    // if (lastAuthor!=null) tempPub.setFieldValue("lastAuthor", lastAuthor);
-                    
-                    if (authors!=null) {
-                        
-                        // update publication.authors from CrossRef since it provides given and family names; given often includes initials, e.g. "Douglas R"
-                        LOG.info("Replacing publication.authors from CrossRef.");
-                        
-                        // place this pub's authors in a set to add to its authors collection; store the ones that are new
-                        authorSet = new HashSet<Author>();
-                        osw.beginTransaction();
-                        for (Object authorObject : authors)  {
-                            JSONObject authorJSON = (JSONObject) authorObject;
-                            // IM Author attributes from CrossRef fields
-                            String firstName = (String) authorJSON.get("given");
-                            String lastName = (String) authorJSON.get("family");
-                            // split out initials if present
-                            // R. K. => R K
-                            // R.K.  => R K
-                            // Douglas R => Douglas R
-                            // Douglas R. => Douglas R
-                            String initials = null;
-                            // deal with space
-                            String[] parts = firstName.split(" ");
-                            if (parts.length==2) {
-                                if (parts[1].length()==1) {
-                                    firstName = parts[0];
-                                    initials = parts[1];
-                                } else if (parts[1].length()==2 && parts[1].endsWith(".")) {
-                                    firstName = parts[0];
-                                    initials = parts[1].substring(0,1);
-                                }
-                            }
-                            // pull initial out if it's an R.K. style first name (but not M.V.K.)
-                            if (initials==null && firstName.length()==4 && firstName.charAt(1)=='.' && firstName.charAt(3)=='.') {
-                                initials = String.valueOf(firstName.charAt(2));
-                                firstName = String.valueOf(firstName.charAt(0));
-                            }
-                            // remove trailing period from a remaining R. style first name
-                            if (firstName.length()==2 && firstName.charAt(1)=='.') {
-                                firstName = String.valueOf(firstName.charAt(0));
-                            }
-                            // name is used as key, ignore initials since sometimes there sometimes not
-                            String name = firstName+" "+lastName;
-                            Author author;
-                            if (authorMap.containsKey(name)) {
-                                author = authorMap.get(name);
-                            } else {
-                                author = (Author) DynamicUtil.createObject(Collections.singleton(Author.class));
-                                author.setFieldValue("firstName", firstName);
-                                author.setFieldValue("lastName", lastName);
-                                author.setFieldValue("name", name);
-                                if (initials!=null) author.setFieldValue("initials", initials);
-                                osw.store(author);
-                                authorMap.put(name, author);
-                                LOG.info("Added: "+firstName+"|"+initials+"|"+lastName+"="+name);
-                            }
-                            authorSet.add(author);
-                        }
-                        osw.commitTransaction();
-
-                        // put these authors into the pub authors collection
-                        tempPub.setFieldValue("authors", authorSet);
-                    
-                    }
-
-                    // store this publication
-                    osw.beginTransaction();
-                    osw.store(tempPub);
-                    osw.commitTransaction();
-
-                } else if (pubMedId!=0) {
-
-                    // get the publication from its PMID and summary
-                    PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
-
-                    // store this publication
-                    Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
-                    populateFromSummary(tempPub, summary);
-                    osw.beginTransaction();
-                    osw.store(tempPub);
-                    osw.commitTransaction();
-
-                }
-
-            }
-
-        } catch (IllegalAccessException ex) {
-            throw new ObjectStoreException(ex);
-        } catch (Exception ex) {
-            LOG.error(ex);
+    public void postProcess() throws ObjectStoreException, IllegalAccessException, IOException, ParserConfigurationException, SAXException, ParseException {
+        // delete existing Author objects, first loading them into a collection
+        Query qAuthor = new Query();
+        qAuthor.setDistinct(true);
+        ConstraintSet csAuthor = new ConstraintSet(ConstraintOp.AND);
+        // 0 Author
+        QueryClass qcAuthor = new QueryClass(Author.class);
+        qAuthor.addToSelect(qcAuthor);
+        qAuthor.addFrom(qcAuthor);
+        Set<Author> authorSet = new HashSet<Author>();
+        Results authorResults = osw.getObjectStore().execute(qAuthor);
+        Iterator<?> authorIter = authorResults.iterator();
+        while (authorIter.hasNext()) {
+            ResultsRow<?> rr = (ResultsRow<?>) authorIter.next();
+            authorSet.add((Author)rr.get(0));
         }
+        // delete them one by one (because bulk deletion is broken)
+        // NOTE: this does not delete authorspublications records. That is a bug IMO.
+        osw.beginTransaction();
+        for (Author author : authorSet) {
+            osw.delete(author);
+        }
+        osw.commitTransaction();
+        
+        // now query the publications
+        Query qPub = new Query();
+        qPub.setDistinct(true);
+        
+        // 0 Publication
+        QueryClass qcPub = new QueryClass(Publication.class);
+        qPub.addToSelect(qcPub);
+        qPub.addFrom(qcPub);
+        
+        // execute the query
+        Results pubResults = osw.getObjectStore().execute(qPub);
+        Iterator<?> pubIter = pubResults.iterator();
+        while (pubIter.hasNext()) {
+            LOG.info("------------------------------------------------");
+            ResultsRow<?> rrPub = (ResultsRow<?>) pubIter.next();
+            Publication pub = (Publication) rrPub.get(0);
+            // field values
+            String title = stringOrNull(pub.getFieldValue("title"));
+            String firstAuthor = stringOrNull(pub.getFieldValue("firstAuthor"));
+            // core IM model does not contain lastAuthor
+            // String lastAuthor = stringOrNull(pub.getFieldValue("lastAuthor"));
+            String month = stringOrNull(pub.getFieldValue("month"));
+            int year = intOrZero(pub.getFieldValue("year"));
+            String journal = stringOrNull(pub.getFieldValue("journal"));
+            String volume = stringOrNull(pub.getFieldValue("volume"));
+            String issue = stringOrNull(pub.getFieldValue("issue"));
+            String pages = stringOrNull(pub.getFieldValue("pages"));
+            String abstractText = stringOrNull(pub.getFieldValue("abstractText"));
+            int pubMedId = intOrZero(pub.getFieldValue("pubMedId"));
+            String doi = stringOrNull(pub.getFieldValue("doi"));
+            
+            // try to snag the PMID and DOI if we have just a title
+            if (doi==null && pubMedId==0 && title!=null) {
+                // query PubMed for PMID from title; add DOI if it's there
+                PubMedSummary summary = new PubMedSummary(title, API_KEY);
+                if (summary.id==0) {
+                    LOG.info("PMID not found from title:"+title);
+                } else {
+                    pubMedId = summary.id;
+                    LOG.info("PMID found from title:"+pubMedId+":"+title);
+                    LOG.info("Matching title:"+summary.title);
+                    if (summary.doi!=null) {
+                        doi = summary.doi;
+                        LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
+                    }
+                }
+            } else if (doi==null && pubMedId!=0) {
+                // query PubMed for data from PMID, update everything in case CrossRef fails
+                PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
+                if (summary.doi!=null) {
+                    doi = summary.doi;
+                    LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
+                }
+            }
 
+            // query CrossRef entry from DOI or title/firstAuthor
+            WorksQuery wq = null;
+            boolean crossRefSuccess = false;
+            JSONArray authors = null;
+            if (doi!=null) {
+                wq = new WorksQuery(doi);
+                crossRefSuccess = (wq.getStatus()!=null && wq.getStatus().equals("ok"));
+            } else if (firstAuthor!=null || title!=null) {
+                wq = new WorksQuery(firstAuthor, title);
+                crossRefSuccess = wq.isTitleMatched();
+                if (crossRefSuccess) {
+                    LOG.info("DOI found from firstAuthor/title:"+firstAuthor+"/"+title);
+                    LOG.info("Matching title:"+wq.getTitle());
+                }
+            }
+            
+            if (crossRefSuccess) {
+                // update attributes from CrossRef if found
+                title = wq.getTitle();
+                try { year = wq.getJournalIssueYear(); } catch (Exception ex) { }
+                if (year==0) {
+                    try { year = wq.getIssuedYear(); } catch (Exception ex) { }
+                }
+                try { month = String.valueOf(wq.getJournalIssueMonth()); } catch (Exception ex) { }
+                if (month==null) {
+                    try { month = String.valueOf(wq.getIssuedMonth()); } catch (Exception ex) { }
+                }
+                if (wq.getShortContainerTitle()!=null) {
+                    journal = wq.getShortContainerTitle();
+                } else if (wq.getContainerTitle()!=null) {
+                    journal = wq.getContainerTitle();
+                }
+                volume = wq.getVolume();
+                issue = wq.getIssue();
+                pages = wq.getPage();
+                doi = wq.getDOI();
+                authors = wq.getAuthors();
+                if (authors!=null && authors.size()>0) {
+                    JSONObject firstAuthorObject = (JSONObject) authors.get(0);
+                    firstAuthor = firstAuthorObject.get("family")+", "+firstAuthorObject.get("given");
+                }
+                // core IM model does not contain lastAuthor
+                // if (authors.size()>1) {
+                //     JSONObject lastAuthorObject = (JSONObject) authors.get(authors.size()-1);
+                //     lastAuthor = lastAuthorObject.get("family")+", "+lastAuthorObject.get("given");
+                // }
+                
+                // update publication object
+                Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
+                if (title!=null) tempPub.setFieldValue("title", title);
+                if (firstAuthor!=null) tempPub.setFieldValue("firstAuthor", firstAuthor);
+                if (month!=null && !month.equals("0")) tempPub.setFieldValue("month", month);
+                if (year>0) tempPub.setFieldValue("year", year);
+                if (journal!=null) tempPub.setFieldValue("journal", journal);
+                if (volume!=null) tempPub.setFieldValue("volume", volume);
+                if (issue!=null) tempPub.setFieldValue("issue", issue);
+                if (pages!=null) tempPub.setFieldValue("pages", pages);
+                if (pubMedId>0) tempPub.setFieldValue("pubMedId", String.valueOf(pubMedId));
+                if (doi!=null) tempPub.setFieldValue("doi", doi);
+                // core IM model does not contain lastAuthor
+                // if (lastAuthor!=null) tempPub.setFieldValue("lastAuthor", lastAuthor);
+                
+                if (authors!=null) {
+                    // update publication.authors from CrossRef since it provides given and family names; given often includes initials, e.g. "Douglas R"
+                    LOG.info("Replacing publication.authors from CrossRef.");
+                    // place this pub's authors in a set to add to its authors collection; store the ones that are new
+                    authorSet = new HashSet<Author>();
+                    osw.beginTransaction();
+                    for (Object authorObject : authors)  {
+                        JSONObject authorJSON = (JSONObject) authorObject;
+                        // IM Author attributes from CrossRef fields
+                        String firstName = (String) authorJSON.get("given");
+                        String lastName = (String) authorJSON.get("family");
+                        // split out initials if present
+                        // R. K. => R K
+                        // R.K.  => R K
+                        // Douglas R => Douglas R
+                        // Douglas R. => Douglas R
+                        String initials = null;
+                        // deal with space
+                        String[] parts = firstName.split(" ");
+                        if (parts.length==2) {
+                            if (parts[1].length()==1) {
+                                firstName = parts[0];
+                                initials = parts[1];
+                            } else if (parts[1].length()==2 && parts[1].endsWith(".")) {
+                                firstName = parts[0];
+                                initials = parts[1].substring(0,1);
+                            }
+                        }
+                        // pull initial out if it's an R.K. style first name (but not M.V.K.)
+                        if (initials==null && firstName.length()==4 && firstName.charAt(1)=='.' && firstName.charAt(3)=='.') {
+                            initials = String.valueOf(firstName.charAt(2));
+                            firstName = String.valueOf(firstName.charAt(0));
+                        }
+                        // remove trailing period from a remaining R. style first name
+                        if (firstName.length()==2 && firstName.charAt(1)=='.') {
+                            firstName = String.valueOf(firstName.charAt(0));
+                        }
+                        // name is used as key, ignore initials since sometimes there sometimes not
+                        String name = firstName+" "+lastName;
+                        Author author;
+                        if (authorMap.containsKey(name)) {
+                            author = authorMap.get(name);
+                        } else {
+                            author = (Author) DynamicUtil.createObject(Collections.singleton(Author.class));
+                            author.setFieldValue("firstName", firstName);
+                            author.setFieldValue("lastName", lastName);
+                            author.setFieldValue("name", name);
+                            if (initials!=null) author.setFieldValue("initials", initials);
+                            osw.store(author);
+                            authorMap.put(name, author);
+                            LOG.info("Added: "+firstName+"|"+initials+"|"+lastName+"="+name);
+                        }
+                        authorSet.add(author);
+                    }
+                    osw.commitTransaction();
+                    // put these authors into the pub authors collection
+                    tempPub.setFieldValue("authors", authorSet);
+                }
+                // store this publication
+                osw.beginTransaction();
+                osw.store(tempPub);
+                osw.commitTransaction();
+
+            } else if (pubMedId!=0) {
+                // get the publication from its PMID and summary
+                PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
+                // store this publication
+                Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
+                populateFromSummary(tempPub, summary);
+                osw.beginTransaction();
+                osw.store(tempPub);
+                osw.commitTransaction();
+            }
+        }
     }
 
     /**
@@ -420,10 +397,7 @@ public class PopulatePublicationsProcess extends PostProcessor {
             authorSet.add(author);
         }
         osw.commitTransaction();
-
         // put these authors into the pub authors collection
         publication.setFieldValue("authors", authorSet);
-
     }
-
 }
