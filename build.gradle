@@ -48,7 +48,9 @@ subprojects {
     
     dependencies {
         implementation group: 'org.intermine', name: 'bio-core', version: System.getProperty("bioVersion"), transitive: false
-        implementation group : "org.intermine", name: "intermine-resources", version: System.getProperty("imVersion") // log4j
+        implementation group: "org.intermine", name: "intermine-resources", version: System.getProperty("imVersion") // log4j
+	implementation group: "org.intermine", name: 'bio-source-lis-reactome', version: System.getProperty("bioVersion"), transitive: false 
+
         implementation group: 'commons-collections', name: 'commons-collections', version: '3.2'
         testCompile group: 'junit', name: 'junit', version: '4.8.2'
         testCompile group: "org.intermine", name: "intermine-integrate", version: System.getProperty("imVersion")
