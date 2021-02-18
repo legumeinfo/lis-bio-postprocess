@@ -81,7 +81,7 @@ public class PopulateQTLGeneCollectionsProcess extends PostProcessor {
 	for (Object qtlResultObject : qtlResultObjects) {
 	    ResultsRow row = (ResultsRow) qtlResultObject;
 	    QTLMarker qtlMarker = (QTLMarker) row.get(0);
-	    QTL qtl = qtlMarker.getqTL();
+	    QTL qtl = qtlMarker.getQtl();
 	    GeneticMarker marker = qtlMarker.getMarker();
 	    Location location = marker.getChromosomeLocation();
 	    if (location==null) continue;
