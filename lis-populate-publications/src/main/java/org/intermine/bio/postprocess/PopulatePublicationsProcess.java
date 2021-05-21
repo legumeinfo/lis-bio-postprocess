@@ -134,7 +134,8 @@ public class PopulatePublicationsProcess extends PostProcessor {
             // try to snag the PMID and DOI if we have just a title
             if (doi==null && pubMedId==0 && title!=null) {
                 // query PubMed for PMID from title; add DOI if it's there
-                PubMedSummary summary = new PubMedSummary(title, API_KEY);
+                PubMedSummary summary = new PubMedSummary();
+                summary.searchTitle(title, API_KEY);
                 if (summary.id==0) {
                     LOG.info("PMID not found from title:"+title);
                 } else {
@@ -147,11 +148,20 @@ public class PopulatePublicationsProcess extends PostProcessor {
                     }
                 }
             } else if (doi==null && pubMedId!=0) {
-                // query PubMed for data from PMID, update everything in case CrossRef fails
-                PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
+                // query PubMed for data from PMID to get DOI
+                PubMedSummary summary = new PubMedSummary();
+                summary.search(pubMedId, API_KEY);
                 if (summary.doi!=null) {
                     doi = summary.doi;
                     LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
+                }
+            } else if (doi!=null && pubMedId==0) {
+                // query PubMed for data from DOI to get PMID
+                PubMedSummary summary = new PubMedSummary();
+                summary.searchDOI(doi, API_KEY);
+                if (summary.id!=0) {
+                    pubMedId = summary.id;
+                    LOG.info("PMID found from DOI:"+pubMedId+":"+doi);
                 }
             }
 
@@ -196,12 +206,26 @@ public class PopulatePublicationsProcess extends PostProcessor {
                     JSONObject firstAuthorObject = (JSONObject) authors.get(0);
                     firstAuthor = firstAuthorObject.get("family")+", "+firstAuthorObject.get("given");
                 }
+                
                 // core IM model does not contain lastAuthor
                 // if (authors.size()>1) {
                 //     JSONObject lastAuthorObject = (JSONObject) authors.get(authors.size()-1);
                 //     lastAuthor = lastAuthorObject.get("family")+", "+lastAuthorObject.get("given");
                 // }
-                
+
+                // query PubMed for PMID from title if missing
+                if (pubMedId==0) {
+                    PubMedSummary summary = new PubMedSummary();
+                    summary.searchTitle(title, API_KEY);
+                    if (summary.id==0) {
+                        LOG.info("PMID not found from title:"+title);
+                    } else {
+                        pubMedId = summary.id;
+                        LOG.info("PMID found from title:"+pubMedId+":"+title);
+                        LOG.info("Matching title:"+summary.title);
+                    }
+                }
+
                 // update publication object
                 Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
                 if (title!=null) tempPub.setFieldValue("title", title);
@@ -282,7 +306,8 @@ public class PopulatePublicationsProcess extends PostProcessor {
 
             } else if (pubMedId!=0) {
                 // get the publication from its PMID and summary
-                PubMedSummary summary = new PubMedSummary(pubMedId, API_KEY);
+                PubMedSummary summary = new PubMedSummary();
+                summary.search(pubMedId, API_KEY);
                 // store this publication
                 Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
                 populateFromSummary(tempPub, summary);

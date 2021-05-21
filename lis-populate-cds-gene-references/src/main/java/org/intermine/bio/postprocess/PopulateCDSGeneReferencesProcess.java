@@ -34,7 +34,7 @@ import org.intermine.model.bio.Gene;
 import org.apache.log4j.Logger;
 
 /**
- * Fill the CDS.gene references by matching gene primaryIdentifier.1 with CDS.primaryIdentifier.
+ * Fill the CDS.gene references by matching Gene.primaryIdentifier with CDS.primaryIdentifier.*
  *
  * @author Sam Hokin
  */
@@ -66,9 +66,7 @@ public class PopulateCDSGeneReferencesProcess extends PostProcessor {
 	// cds.primaryIdentifier = gene.primaryIdentifier.1 (primary CDS)
 	QueryField cdsPrimaryIdentifier = new QueryField(qcCDS, "primaryIdentifier");
 	QueryField genePrimaryIdentifier = new QueryField(qcGene, "primaryIdentifier");
-	QueryValue dot1 = new QueryValue(".1");
-	QueryExpression genePrimaryIdentifierMatch = new QueryExpression(genePrimaryIdentifier, QueryExpression.CONCAT, dot1);
-	SimpleConstraint sc = new SimpleConstraint(cdsPrimaryIdentifier, ConstraintOp.EQUALS, genePrimaryIdentifierMatch);
+	SimpleConstraint sc = new SimpleConstraint(cdsPrimaryIdentifier, ConstraintOp.CONTAINS, genePrimaryIdentifier);
 	q.setConstraint(sc);
 	
         // execute the query
