@@ -10,15 +10,12 @@ package org.intermine.bio.postprocess;
  *
  */
 
-import java.util.List;
-
 import org.intermine.bio.util.PostProcessUtil;
 import org.intermine.postprocess.PostProcessor;
 import org.intermine.metadata.ConstraintOp;
 import org.intermine.objectstore.ObjectStore;
 import org.intermine.objectstore.ObjectStoreException;
 import org.intermine.objectstore.ObjectStoreWriter;
-import org.intermine.objectstore.intermine.ObjectStoreInterMineImpl;
 import org.intermine.objectstore.query.Query;
 import org.intermine.objectstore.query.QueryClass;
 import org.intermine.objectstore.query.QueryExpression;
@@ -63,19 +60,25 @@ public class PopulateCDSGeneReferencesProcess extends PostProcessor {
         QueryClass qcGene = new QueryClass(Gene.class);
         q.addFrom(qcGene);
         q.addToSelect(qcGene);
-	// cds.primaryIdentifier = gene.primaryIdentifier.1 (primary CDS)
+        // CDS.primaryIdentifier LIKE Gene.primaryIdentifier.%
 	QueryField cdsPrimaryIdentifier = new QueryField(qcCDS, "primaryIdentifier");
 	QueryField genePrimaryIdentifier = new QueryField(qcGene, "primaryIdentifier");
-	SimpleConstraint sc = new SimpleConstraint(cdsPrimaryIdentifier, ConstraintOp.CONTAINS, genePrimaryIdentifier);
+	QueryValue dotPercent = new QueryValue(".%");
+	QueryExpression genePrimaryIdentifierMatch = new QueryExpression(genePrimaryIdentifier, QueryExpression.CONCAT, dotPercent);
+	SimpleConstraint sc = new SimpleConstraint(cdsPrimaryIdentifier, ConstraintOp.MATCHES, genePrimaryIdentifierMatch);
 	q.setConstraint(sc);
 	
         // execute the query
-        Results results = osw.getObjectStore().execute(q);
-	List<Object> resultObjects = results.asList();
-	
+        // Results results = osw.getObjectStore().execute(q);
+        int batchSize = 1000;
+        boolean optimise = true;
+        boolean explain = false; // crashes if true
+        boolean prefetch = true;
+        Results results = osw.getObjectStore().execute(q, batchSize, optimise, explain, prefetch);
+
         // begin transaction for storing and run through the matches
 	osw.beginTransaction();
-	for (Object resultObject : resultObjects) {
+	for (Object resultObject : results.asList()) {
 	    ResultsRow row = (ResultsRow) resultObject;
 	    try {
 		CDS cds = PostProcessUtil.cloneInterMineObject((CDS) row.get(0));
