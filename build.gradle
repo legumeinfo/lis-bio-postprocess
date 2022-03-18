@@ -1,15 +1,10 @@
 buildscript {
     repositories {
         mavenLocal()
-        jcenter()
-        maven {
-            url "https://oss.jfrog.org/artifactory/oss-snapshot-local"
-        }
+        mavenCentral()
     }
     dependencies {
         classpath group: 'org.intermine', name: 'plugin', version: System.getProperty("imVersion")
-        classpath "com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.0"
-        classpath "org.jfrog.buildinfo:build-info-extractor-gradle:4.6.2"        
     }
 }
 
@@ -21,12 +16,11 @@ ext {
 
 subprojects {
     group = 'org.intermine'
-    version = '5.0.5'
+    version = '5.0.6.1'
 
     apply plugin: 'java'
     apply plugin: 'maven'
-    apply plugin: 'com.jfrog.bintray'
-    apply plugin: 'com.jfrog.artifactory'
+    apply plugin: 'signing'
     apply plugin: 'dbmodel'
     apply plugin: 'biocore-dbmodel'
     apply plugin: "checkstyle"
@@ -36,10 +30,7 @@ subprojects {
 
     repositories {
         mavenLocal()
-        jcenter()
-        maven {
-            url "https://oss.jfrog.org/artifactory/oss-snapshot-local"
-        }
+        mavenCentral()
     }
 
     configurations {
@@ -47,23 +38,13 @@ subprojects {
     }
     
     dependencies {
-        compile group: "org.intermine", name: "intermine-model", version: System.getProperty("imVersion")
-        implementation group: "org.intermine", name: "bio-core", version: System.getProperty("bioVersion"), transitive: false
-        implementation group: "org.intermine", name: "intermine-resources", version: System.getProperty("imVersion") // log4j
-        implementation group: "org.intermine", name: "intermine-objectstore", version: System.getProperty("imVersion")
-        implementation group: 'commons-collections', name: 'commons-collections', version: '3.2'
-
+        compile group: 'org.intermine', name: 'bio-core', version: System.getProperty("bioVersion"), transitive: false
+        compile group : "org.intermine", name: "intermine-resources", version: System.getProperty("imVersion") // log4j
+        compile group: 'commons-collections', name: 'commons-collections', version: '3.2'
         testCompile group: 'junit', name: 'junit', version: '4.8.2'
         testCompile group: "org.intermine", name: "intermine-integrate", version: System.getProperty("imVersion")
         testCompile group: 'xmlunit', name: 'xmlunit', version: '1.0'
         mergeModel group : "org.intermine", name: "intermine-objectstore", version: System.getProperty("imVersion")
-
-        // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
-        implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.9'
-        // https://mvnrepository.com/artifact/commons-net/commons-net
-        implementation group: 'commons-net', name: 'commons-net', version: '3.6'
-        // https://mvnrepository.com/artifact/com.thoughtworks.xstream/xstream
-        implementation group: 'com.thoughtworks.xstream', name: 'xstream', version: '1.4.11.1'
         // https://mvnrepository.com/artifact/com.googlecode.json-simple/json-simple
         implementation group: 'com.googlecode.json-simple', name: 'json-simple', version: '1.1.1'
     }
@@ -96,15 +77,15 @@ subprojects {
 
     checkstyle {
         toolVersion '7.8.1'
-        configFile file("../../../config/checkstyle/checkstyle.xml")
+        configFile file("${rootDir}/../../config/checkstyle/checkstyle.xml")
         sourceSets = [sourceSets.main]
         showViolations = true
         ignoreFailures = false
         maxWarnings = 0
         //reportsDir = file("$project.rootDir/reports/checkstyle/$project.name")
         configProperties = [
-                'checkstyle.header.file': "../../config/checkstyle/copyright_header.txt",
-                'suppressionFile': "../../config/checkstyle/suppressions.xml"
+                'checkstyle.header.file': "${rootDir}/../../config/checkstyle/copyright_header.txt",
+                'suppressionFile': "${rootDir}/../../config/checkstyle/suppressions.xml"
         ]
     }
 
@@ -146,49 +127,51 @@ subprojects {
         archives javadocJar
     }
 
-    artifactory {
-        contextUrl = 'https://oss.jfrog.org/artifactory/'
-        resolve {
-            repository {
-                repoKey = 'libs-release'
-            }
-        }
-        publish {
-            repository {
-                if (project.version.endsWith("-SNAPSHOT")) {
-                    repoKey = 'oss-snapshot-local'
-                } else {
-                    repoKey = 'oss-release-local'
-                }
-            username = System.getenv('BINTRAY_USER')
-            password = System.getenv('BINTRAY_KEY')
-            }
-            defaults {
-            publishConfigs('archives')
-            }
-        }
+    signing {
+        required { gradle.taskGraph.hasTask("publish") }
+        sign configurations.archives
     }
 
-    bintray {
-        user = System.getenv('BINTRAY_USER')
-        key = System.getenv('BINTRAY_KEY')
-        dryRun = false //[Default: false] Whether to run this as dry-run, without deploying
-        publish = true //[Default: false] Whether version should be auto published after an upload
-        override = true //[Default: false] Whether to override version artifacts already published
-        pkg {
-            repo = 'bio'
-            name = project.name
-            userOrg = user
-            licenses = ['LGPL-2.1']
-            vcsUrl = 'https://github.com/intermine/intermine.git'
-            publicDownloadNumbers = true
-            version {
-                name = '4.3.0'
-                desc = 'InterMine 4.3.0'
-                vcsTag = 'intermine-4.3.0'
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
+
+                repository(url: "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/") {
+                    authentication(userName: ossrhUsername, password: ossrhPassword)
+                }
+
+                snapshotRepository(url: "https://s01.oss.sonatype.org/content/repositories/snapshots/") {
+                    authentication(userName: ossrhUsername, password: ossrhPassword)
+                }
+
+                pom.project {
+                    name project.name
+                    packaging 'jar'
+                    description 'InterMine Post Processes modules'
+                    url 'https://github.com/intermine/intermine'
+
+                    scm {
+                        connection 'scm:git:git://github.com/intermine/intermine.git'
+                        developerConnection 'scm:git:ssh://github.com:intermine/intermine.git'
+                        url 'https://github.com/intermine/intermine'
+                    }
+
+                    licenses {
+                        license {
+                            name 'LGPL-2.1'
+                            url 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt'
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            name 'InterMine core team and contributors'
+                        }
+                    }
+                }
             }
         }
-        configurations = ['archives']
     }
 
     tasks.compileTestJava.dependsOn 'copyMineProperties', 'buildUnitTestDB'

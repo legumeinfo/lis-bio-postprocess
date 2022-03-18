@@ -16,7 +16,6 @@ import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.GeneticMarker;
 import org.intermine.model.bio.Location;
 import org.intermine.model.bio.QTL;
-import org.intermine.model.bio.QTLMarker;
 
 import org.intermine.objectstore.ObjectStoreException;
 import org.intermine.objectstore.ObjectStoreWriter;
@@ -35,7 +34,10 @@ import org.intermine.objectstore.query.SimpleConstraint;
 import org.apache.log4j.Logger;
 
 /**
- * Associate genes which are spanned by the genomic range of markers associated with QTLs with those QTLs. If only one marker, then it is simply the gene that overlaps that marker.
+ * Associate genes which are spanned by the genomic range of markers associated with QTLs with those QTLs.
+ * If only one marker, then it is simply the gene that overlaps that marker.
+ *
+ * NOTE: this post-processor must be run AFTER the QTL.markers collections have been populated!
  *
  * @author Sam Hokin
  */
@@ -53,10 +55,6 @@ public class PopulateQTLGeneCollectionsProcess extends PostProcessor {
 
     /**
      * {@inheritDoc}
-     *
-     * Main method
-     *
-     * @throws ObjectStoreException if the objectstore throws an exception
      */
     public void postProcess() throws ObjectStoreException {
         
@@ -64,14 +62,14 @@ public class PopulateQTLGeneCollectionsProcess extends PostProcessor {
         // First section - accumulate the QTLs and their genomic spans, from their associated markers
         // ----------------------------------------------------------------------------------------------
 
-        LOG.info("Accumulating QTLs and genomic spans from QTLMarkers...");
+        LOG.info("Accumulating QTLs and genomic spans from QTL.markers...");
         
         Query qQTL = new Query();
         qQTL.setDistinct(true);
-        // 0 QTLMarker
-        QueryClass qcQTLMarker = new QueryClass(QTLMarker.class);
-        qQTL.addToSelect(qcQTLMarker);
-        qQTL.addFrom(qcQTLMarker);
+        // 0 QTL
+        QueryClass qcQTL = new QueryClass(QTL.class);
+        qQTL.addToSelect(qcQTL);
+        qQTL.addFrom(qcQTL);
 
 	// store each QTL's markers in a List
 	Map<QTL,List<GeneticMarker>> qtlMarkerMap = new HashMap<>();
@@ -80,19 +78,18 @@ public class PopulateQTLGeneCollectionsProcess extends PostProcessor {
 	List<Object> qtlResultObjects = osw.getObjectStore().execute(qQTL).asList();
 	for (Object qtlResultObject : qtlResultObjects) {
 	    ResultsRow row = (ResultsRow) qtlResultObject;
-	    QTLMarker qtlMarker = (QTLMarker) row.get(0);
-	    QTL qtl = qtlMarker.getQtl();
-	    GeneticMarker marker = qtlMarker.getMarker();
-	    Location location = marker.getChromosomeLocation();
-	    if (location==null) continue;
-	    if (qtlMarkerMap.containsKey(qtl)) {
-		List<GeneticMarker> markerList = qtlMarkerMap.get(qtl);
-		markerList.add(marker);
-	    } else {
-		List<GeneticMarker> markerList = new LinkedList<>();
-		markerList.add(marker);
-		qtlMarkerMap.put(qtl, markerList);
-	    }
+	    QTL qtl = (QTL) row.get(0);
+            for (GeneticMarker marker : qtl.getMarkers()) {
+                Location location = marker.getChromosomeLocation();
+                if (location==null) continue;
+                if (qtlMarkerMap.containsKey(qtl)) {
+                    qtlMarkerMap.get(qtl).add(marker);
+                } else {
+                    List<GeneticMarker> markerList = new LinkedList<>();
+                    markerList.add(marker);
+                    qtlMarkerMap.put(qtl, markerList);
+                }
+            }
 	}
 
 	// run through the QTLs to get the full genomic range of markers, load those into QTLSpan objects
