@@ -5,6 +5,7 @@ include ':bio-postprocess-lis-populate-gene-protein-collections',
     ':bio-postprocess-lis-populate-cds-gene-references',
     ':bio-postprocess-lis-populate-cds-protein-references',
     ':bio-postprocess-lis-populate-cds-transcript-references',
+    ':bio-postprocess-lis-populate-cdsregion-cds-references',
     ':bio-postprocess-lis-populate-linkagegroup-marker-collections',
     ':bio-postprocess-lis-populate-transcript-gene-references',
     ':bio-postprocess-lis-populate-transcript-protein-references',
@@ -18,6 +19,7 @@ project(':bio-postprocess-lis-populate-gwas-marker-collections').projectDir     
 project(':bio-postprocess-lis-populate-cds-gene-references').projectDir             = new File(settingsDir, 'lis-populate-cds-gene-references')
 project(':bio-postprocess-lis-populate-cds-protein-references').projectDir          = new File(settingsDir, 'lis-populate-cds-protein-references')
 project(':bio-postprocess-lis-populate-cds-transcript-references').projectDir       = new File(settingsDir, 'lis-populate-cds-transcript-references')
+project(':bio-postprocess-lis-populate-cdsregion-cds-references').projectDir        = new File(settingsDir, 'lis-populate-cdsregion-cds-references')
 project(':bio-postprocess-lis-populate-linkagegroup-marker-collections').projectDir = new File(settingsDir, 'lis-populate-linkagegroup-marker-collections')
 project(':bio-postprocess-lis-populate-transcript-gene-references').projectDir      = new File(settingsDir, 'lis-populate-transcript-gene-references')
 project(':bio-postprocess-lis-populate-transcript-protein-references').projectDir   = new File(settingsDir, 'lis-populate-transcript-protein-references')
