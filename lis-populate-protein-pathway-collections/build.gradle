@@ -21,7 +21,7 @@ dependencies {
     compile group: 'org.intermine', name: 'bio-model', version: bioVersion //to read genomic_keyDefs.properties
     compile group: 'org.intermine', name: 'intermine-integrate', version: imVersion
     bioModel group: 'org.intermine', name: 'bio-model', version: bioVersion, transitive: false
-    implementation group: 'org.intermine', name: 'bio-source-lis-pathway', version: bioVersion
+    implementation group: 'org.intermine', name: 'bio-source-lis-annotation', version: bioVersion
 }
 
 processResources {
