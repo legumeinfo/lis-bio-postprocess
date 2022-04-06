@@ -94,11 +94,11 @@ public class PopulatePublicationsProcess extends PostProcessor {
         }
         // delete them one by one (because bulk deletion is broken)
         // NOTE: this does not delete authorspublications records. That is a bug IMO.
-        osw.beginTransaction();
         for (Author author : authorSet) {
+            osw.beginTransaction();
             osw.delete(author);
+            osw.commitTransaction();
         }
-        osw.commitTransaction();
         
         // now query the publications
         Query qPub = new Query();
@@ -113,7 +113,6 @@ public class PopulatePublicationsProcess extends PostProcessor {
         Results pubResults = osw.getObjectStore().execute(qPub);
         Iterator<?> pubIter = pubResults.iterator();
         while (pubIter.hasNext()) {
-            LOG.info("------------------------------------------------");
             ResultsRow<?> rrPub = (ResultsRow<?>) pubIter.next();
             Publication pub = (Publication) rrPub.get(0);
             // field values
@@ -130,59 +129,28 @@ public class PopulatePublicationsProcess extends PostProcessor {
             String abstractText = stringOrNull(pub.getFieldValue("abstractText"));
             int pubMedId = intOrZero(pub.getFieldValue("pubMedId"));
             String doi = stringOrNull(pub.getFieldValue("doi"));
-            
-            // try to snag the PMID and DOI if we have just a title
-            if (doi==null && pubMedId==0 && title!=null) {
-                // query PubMed for PMID from title; add DOI if it's there
-                PubMedSummary summary = new PubMedSummary();
-                summary.searchTitle(title, API_KEY);
-                if (summary.id==0) {
-                    LOG.info("PMID not found from title:"+title);
-                } else {
-                    pubMedId = summary.id;
-                    LOG.info("PMID found from title:"+pubMedId+":"+title);
-                    LOG.info("Matching title:"+summary.title);
-                    if (summary.doi!=null) {
-                        doi = summary.doi;
-                        LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
-                    }
-                }
-            } else if (doi==null && pubMedId!=0) {
-                // query PubMed for data from PMID to get DOI
-                PubMedSummary summary = new PubMedSummary();
-                summary.search(pubMedId, API_KEY);
-                if (summary.doi!=null) {
-                    doi = summary.doi;
-                    LOG.info("DOI found from PMID:"+pubMedId+":"+doi);
-                }
-            } else if (doi!=null && pubMedId==0) {
-                // query PubMed for data from DOI to get PMID
+            LOG.info("##### "+doi);
+            if (doi==null) {
+                LOG.error("Publication missing DOI: "+title);
+                continue;
+            }
+
+            // query PubMed for data from DOI to get PMID
+            if (pubMedId==0) {
                 PubMedSummary summary = new PubMedSummary();
                 summary.searchDOI(doi, API_KEY);
                 if (summary.id!=0) {
                     pubMedId = summary.id;
-                    LOG.info("PMID found from DOI:"+pubMedId+":"+doi);
+                    LOG.info("PMID found from DOI:"+pubMedId);
                 }
             }
 
-            // query CrossRef entry from DOI or title/firstAuthor
+            // query CrossRef entry from DOI
             WorksQuery wq = null;
-            boolean crossRefSuccess = false;
             JSONArray authors = null;
-            if (doi!=null) {
-                wq = new WorksQuery(doi);
-                crossRefSuccess = (wq.getStatus()!=null && wq.getStatus().equals("ok"));
-            } else if (firstAuthor!=null || title!=null) {
-                wq = new WorksQuery(firstAuthor, title);
-                crossRefSuccess = wq.isTitleMatched();
-                if (crossRefSuccess) {
-                    LOG.info("DOI found from firstAuthor/title:"+firstAuthor+"/"+title);
-                    LOG.info("Matching title:"+wq.getTitle());
-                }
-            }
-            
-            if (crossRefSuccess) {
-                // update attributes from CrossRef if found
+            wq = new WorksQuery(doi);
+            if (wq.getStatus()!=null && wq.getStatus().equals("ok")) {
+                // update attributes from CrossRef
                 title = wq.getTitle();
                 try { year = wq.getJournalIssueYear(); } catch (Exception ex) { }
                 if (year==0) {
@@ -204,7 +172,8 @@ public class PopulatePublicationsProcess extends PostProcessor {
                 authors = wq.getAuthors();
                 if (authors!=null && authors.size()>0) {
                     JSONObject firstAuthorObject = (JSONObject) authors.get(0);
-                    firstAuthor = firstAuthorObject.get("family")+", "+firstAuthorObject.get("given");
+                    firstAuthor = (String) firstAuthorObject.get("family");
+                    if (firstAuthorObject.get("given")!=null) firstAuthor += ", " + (String) firstAuthorObject.get("given");
                 }
                 
                 // core IM model does not contain lastAuthor
@@ -212,19 +181,6 @@ public class PopulatePublicationsProcess extends PostProcessor {
                 //     JSONObject lastAuthorObject = (JSONObject) authors.get(authors.size()-1);
                 //     lastAuthor = lastAuthorObject.get("family")+", "+lastAuthorObject.get("given");
                 // }
-
-                // query PubMed for PMID from title if missing
-                if (pubMedId==0) {
-                    PubMedSummary summary = new PubMedSummary();
-                    summary.searchTitle(title, API_KEY);
-                    if (summary.id==0) {
-                        LOG.info("PMID not found from title:"+title);
-                    } else {
-                        pubMedId = summary.id;
-                        LOG.info("PMID found from title:"+pubMedId+":"+title);
-                        LOG.info("Matching title:"+summary.title);
-                    }
-                }
 
                 // update publication object
                 Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
@@ -243,14 +199,19 @@ public class PopulatePublicationsProcess extends PostProcessor {
                 
                 if (authors!=null) {
                     // update publication.authors from CrossRef since it provides given and family names; given often includes initials, e.g. "Douglas R"
-                    LOG.info("Replacing publication.authors from CrossRef.");
                     // place this pub's authors in a set to add to its authors collection; store the ones that are new
                     authorSet = new HashSet<Author>();
-                    osw.beginTransaction();
                     for (Object authorObject : authors)  {
                         JSONObject authorJSON = (JSONObject) authorObject;
                         // IM Author attributes from CrossRef fields
-                        String firstName = (String) authorJSON.get("given");
+                        String firstName = null; // there are rare occasions when firstName is missing, so we'll fill that in with a placeholder "X"
+                        if (authorJSON.get("given")==null) {
+                            firstName = "X";
+                        } else {
+                            firstName = (String) authorJSON.get("given");
+                        }
+                        // we require lastName, so if it's missing then bail on this author
+                        if (authorJSON.get("family")==null) continue;
                         String lastName = (String) authorJSON.get("family");
                         // split out initials if present
                         // R. K. => R K
@@ -289,28 +250,19 @@ public class PopulatePublicationsProcess extends PostProcessor {
                             author.setFieldValue("lastName", lastName);
                             author.setFieldValue("name", name);
                             if (initials!=null) author.setFieldValue("initials", initials);
+                            osw.beginTransaction();
                             osw.store(author);
+                            osw.commitTransaction();
                             authorMap.put(name, author);
-                            LOG.info("Added: "+firstName+"|"+initials+"|"+lastName+"="+name);
                         }
                         authorSet.add(author);
                     }
-                    osw.commitTransaction();
                     // put these authors into the pub authors collection
-                    tempPub.setFieldValue("authors", authorSet);
+                    if (authorSet.size()>0) {
+                        tempPub.setFieldValue("authors", authorSet);
+                    }
                 }
                 // store this publication
-                osw.beginTransaction();
-                osw.store(tempPub);
-                osw.commitTransaction();
-
-            } else if (pubMedId!=0) {
-                // get the publication from its PMID and summary
-                PubMedSummary summary = new PubMedSummary();
-                summary.search(pubMedId, API_KEY);
-                // store this publication
-                Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
-                populateFromSummary(tempPub, summary);
                 osw.beginTransaction();
                 osw.store(tempPub);
                 osw.commitTransaction();
@@ -370,59 +322,5 @@ public class PopulatePublicationsProcess extends PostProcessor {
         } else {
             return null;
         }
-    }
-
-    /**
-     * Populate Publication instance fields from the summary
-     */
-    void populateFromSummary(Publication publication, PubMedSummary summary) throws ObjectStoreException {
-        LOG.info("Populating "+summary.id+" from PubMedSummary:");
-        // mandatory fields
-        publication.setFieldValue("title", summary.title);
-	publication.setFieldValue("pubMedId", String.valueOf(summary.id));
-        publication.setFieldValue("year", getYear(summary.pubDate));
-        publication.setFieldValue("journal", summary.source);
-        // optional fields
-        if (getMonth(summary.pubDate)!=null) publication.setFieldValue("month", getMonth(summary.pubDate));
-        if (summary.pages!=null && summary.pages.length()>0) publication.setFieldValue("pages", summary.pages);
-        if (summary.issue!=null && summary.issue.length()>0) publication.setFieldValue("issue", summary.issue);
-        if (summary.doi!=null && summary.doi.length()>0) publication.setFieldValue("doi", summary.doi);
-        if (summary.volume!=null && summary.volume.length()>0) publication.setFieldValue("volume", summary.volume);
-        if (summary.authorList!=null && summary.authorList.size()>0) publication.setFieldValue("firstAuthor", summary.authorList.get(0));
-        // core IM model does not contain lastAuthor
-        // if (summary.lastAuthor!=null && summary.lastAuthor.length()>0) publication.setFieldValue("lastAuthor", summary.lastAuthor);
-        // the list of Author Items
-        Set<Author> authorSet = new HashSet<Author>();
-        osw.beginTransaction();
-        for (String authorName : summary.authorList) {
-            // PubMed has names like Close TJ or Jean M
-            String[] parts = authorName.split(" ");
-            String lastName = parts[0];
-            String initials = parts[1];
-            String firstInitial = String.valueOf(initials.charAt(0));
-            String middleInitial = null;
-            if (initials.length()>1) {
-                middleInitial = String.valueOf(initials.charAt(1));
-            }
-            // name is used as key, ignore middle initials since sometimes there sometimes not
-            String name = firstInitial+" "+lastName;
-            Author author;
-            if (authorMap.containsKey(name)) {
-                author = authorMap.get(name);
-            } else {
-                author = (Author) DynamicUtil.createObject(Collections.singleton(Author.class));
-                author.setFieldValue("firstName", firstInitial);
-                author.setFieldValue("lastName", lastName);
-                if (middleInitial!=null) author.setFieldValue("initials", middleInitial);
-                author.setFieldValue("name", name);
-                osw.store(author);
-                authorMap.put(name, author);
-                LOG.info("Added: "+firstInitial+"|"+middleInitial+"|"+lastName+"="+name);
-            }
-            authorSet.add(author);
-        }
-        osw.commitTransaction();
-        // put these authors into the pub authors collection
-        publication.setFieldValue("authors", authorSet);
     }
 }
