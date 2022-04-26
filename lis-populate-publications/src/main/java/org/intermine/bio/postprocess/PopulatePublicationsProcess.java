@@ -33,13 +33,8 @@ import org.intermine.objectstore.query.ContainsConstraint;
 import org.intermine.objectstore.query.OrderDescending;
 import org.intermine.objectstore.query.Query;
 import org.intermine.objectstore.query.QueryClass;
-import org.intermine.objectstore.query.QueryField;
-import org.intermine.objectstore.query.QueryCollectionReference;
-import org.intermine.objectstore.query.QueryObjectReference;
-import org.intermine.objectstore.query.QueryValue;
 import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
-import org.intermine.objectstore.query.SimpleConstraint;
 import org.intermine.util.DynamicUtil;
 
 import org.apache.log4j.Logger;
@@ -78,6 +73,8 @@ public class PopulatePublicationsProcess extends PostProcessor {
      */
     public void postProcess() throws ObjectStoreException, IllegalAccessException, IOException, ParserConfigurationException, SAXException, ParseException {
         // delete existing Author objects, first loading them into a collection
+        // this is necessary because otherwise we get duplicate Author objects
+        // this is also why we query ALL publications, not just those that need to be populated
         Query qAuthor = new Query();
         qAuthor.setDistinct(true);
         ConstraintSet csAuthor = new ConstraintSet(ConstraintOp.AND);
@@ -100,11 +97,9 @@ public class PopulatePublicationsProcess extends PostProcessor {
             osw.commitTransaction();
         }
         
-        // now query the publications
+        // query all publications
         Query qPub = new Query();
         qPub.setDistinct(true);
-        
-        // 0 Publication
         QueryClass qcPub = new QueryClass(Publication.class);
         qPub.addToSelect(qcPub);
         qPub.addFrom(qcPub);
