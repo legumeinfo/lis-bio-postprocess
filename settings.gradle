@@ -11,7 +11,9 @@ include ':bio-postprocess-lis-populate-gene-proteins',
     ':bio-postprocess-lis-populate-publications',
     ':bio-postprocess-lis-populate-protein-pathways',
     ':bio-postprocess-lis-populate-qtl-genes',
-    ':bio-postprocess-lis-populate-qtl-markers'
+    ':bio-postprocess-lis-populate-qtl-markers',
+    ':bio-postprocess-lis-populate-genotypingrecord-markers',
+    ':bio-postprocess-lis-populate-genefamily-size'
 
 project(':bio-postprocess-lis-populate-gene-proteins').projectDir        = new File(settingsDir, 'lis-populate-gene-proteins')
 project(':bio-postprocess-lis-populate-gwasresult-markers').projectDir   = new File(settingsDir, 'lis-populate-gwasresult-markers')
@@ -25,3 +27,5 @@ project(':bio-postprocess-lis-populate-publications').projectDir         = new F
 project(':bio-postprocess-lis-populate-protein-pathways').projectDir     = new File(settingsDir, 'lis-populate-protein-pathways')
 project(':bio-postprocess-lis-populate-qtl-genes').projectDir            = new File(settingsDir, 'lis-populate-qtl-genes')
 project(':bio-postprocess-lis-populate-qtl-markers').projectDir          = new File(settingsDir, 'lis-populate-qtl-markers')
+project(':bio-postprocess-lis-populate-genotypingrecord-markers').projectDir = new File(settingsDir, 'lis-populate-genotypingrecord-markers')
+project(':bio-postprocess-lis-populate-genefamily-size').projectDir      = new File(settingsDir, 'lis-populate-genefamily-size')
