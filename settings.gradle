@@ -1,30 +1,16 @@
 rootProject.name = 'bio-postprocess-lis'
 
-include ':bio-postprocess-lis-populate-gene-proteins',
-    ':bio-postprocess-lis-populate-gwasresult-markers',
-    ':bio-postprocess-lis-populate-cds-gene',
-    ':bio-postprocess-lis-populate-cds-protein',
-    ':bio-postprocess-lis-populate-cds-transcript',
+include ':bio-postprocess-lis-populate-gwasresult-markers',
     ':bio-postprocess-lis-populate-marker-linkagegrouppositions',
-    ':bio-postprocess-lis-populate-transcript-gene',
-    ':bio-postprocess-lis-populate-transcript-protein',
     ':bio-postprocess-lis-populate-publications',
-    ':bio-postprocess-lis-populate-protein-pathways',
     ':bio-postprocess-lis-populate-qtl-genes',
     ':bio-postprocess-lis-populate-qtl-markers',
     ':bio-postprocess-lis-populate-genotypingrecord-markers',
     ':bio-postprocess-lis-populate-genefamily-size'
 
-project(':bio-postprocess-lis-populate-gene-proteins').projectDir        = new File(settingsDir, 'lis-populate-gene-proteins')
 project(':bio-postprocess-lis-populate-gwasresult-markers').projectDir   = new File(settingsDir, 'lis-populate-gwasresult-markers')
-project(':bio-postprocess-lis-populate-cds-gene').projectDir             = new File(settingsDir, 'lis-populate-cds-gene')
-project(':bio-postprocess-lis-populate-cds-protein').projectDir          = new File(settingsDir, 'lis-populate-cds-protein')
-project(':bio-postprocess-lis-populate-cds-transcript').projectDir       = new File(settingsDir, 'lis-populate-cds-transcript')
 project(':bio-postprocess-lis-populate-marker-linkagegrouppositions').projectDir = new File(settingsDir, 'lis-populate-marker-linkagegrouppositions')
-project(':bio-postprocess-lis-populate-transcript-gene').projectDir      = new File(settingsDir, 'lis-populate-transcript-gene')
-project(':bio-postprocess-lis-populate-transcript-protein').projectDir   = new File(settingsDir, 'lis-populate-transcript-protein')
 project(':bio-postprocess-lis-populate-publications').projectDir         = new File(settingsDir, 'lis-populate-publications')
-project(':bio-postprocess-lis-populate-protein-pathways').projectDir     = new File(settingsDir, 'lis-populate-protein-pathways')
 project(':bio-postprocess-lis-populate-qtl-genes').projectDir            = new File(settingsDir, 'lis-populate-qtl-genes')
 project(':bio-postprocess-lis-populate-qtl-markers').projectDir          = new File(settingsDir, 'lis-populate-qtl-markers')
 project(':bio-postprocess-lis-populate-genotypingrecord-markers').projectDir = new File(settingsDir, 'lis-populate-genotypingrecord-markers')
