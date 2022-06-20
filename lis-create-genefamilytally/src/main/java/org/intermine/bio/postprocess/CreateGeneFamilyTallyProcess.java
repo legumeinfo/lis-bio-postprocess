@@ -88,8 +88,12 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             osw.delete(gft);
             osw.commitTransaction();
         }
+        gftList.clear();
         LOG.info("Deleted GeneFamilyTally objects.");
         // now query GeneFamily and tally gene counts per organism
+        // ATTEMPT: store GeneFamilyTally objects BEFORE storing them
+        List<GeneFamily> gfList = new ArrayList<>();
+        //
         Query qGeneFamily = new Query();
         QueryClass qcGeneFamily = new QueryClass(GeneFamily.class);
         qGeneFamily.addFrom(qcGeneFamily);
@@ -102,7 +106,9 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             Map<String,Organism> organismMap = new HashMap<>();  // keyed by taxonId
 	    ResultsRow row = (ResultsRow) resultObject;
             // --
-            GeneFamily gf = (GeneFamily) row.get(0);             // 0
+            // use clone so we can store updated object below
+            GeneFamily gf = PostProcessUtil.cloneInterMineObject((GeneFamily) row.get(0));
+            gfList.add(gf);
             // --
             Set<Gene> genes = gf.getGenes();
             for (Gene g : genes) {
@@ -123,20 +129,26 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
                 size += tally;
             }
             gf.setFieldValue("size", gf.getGenes().size());
-            // create and store GeneFamilyTally objects for each organism
-            osw.beginTransaction();
             for (String taxonId : tallyMap.keySet()) {
-                GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class)); 
+                GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
+                gftList.add(gft);
                 gft.setGeneFamily(gf);
                 gft.setOrganism(organismMap.get(taxonId));
                 gft.setTally(tallyMap.get(taxonId));
-                // DEBUG
-                System.out.println("## STORING:"+gft.getId()+":"+gft.getGeneFamily().getIdentifier()+":"+gft.getOrganism().getTaxonId()+":"+gft.getTally());
-                //
-                osw.store(gft);
             }
-            osw.commitTransaction();
-	}
+        }
+        // store the GeneFamily objects
+        osw.beginTransaction();
+        for (GeneFamily gf : gfList) {
+            osw.store(gf);
+        }
+        osw.commitTransaction();
+        // store the GeneFamilyTally objects
+        osw.beginTransaction();
+        for (GeneFamilyTally gft : gftList) {
+            osw.store(gft);
+        }
+        osw.commitTransaction();
     }
     
 }
