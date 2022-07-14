@@ -89,6 +89,7 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             osw.commitTransaction();
         }
         gftList.clear();
+        System.out.println("## Deleted GeneFamilyTally objects.");
         LOG.info("Deleted GeneFamilyTally objects.");
         // now query GeneFamily and tally gene counts per organism
         // ATTEMPT: store GeneFamilyTally objects BEFORE storing them
@@ -98,7 +99,7 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
         QueryClass qcGeneFamily = new QueryClass(GeneFamily.class);
         qGeneFamily.addFrom(qcGeneFamily);
         qGeneFamily.addToSelect(qcGeneFamily);
-        qGeneFamily.addToOrderBy(new QueryField(qcGeneFamily, "identifier"), "desc"); 
+        qGeneFamily.addToOrderBy(new QueryField(qcGeneFamily, "identifier"), "desc");
         // execute the query
         Results results = osw.getObjectStore().execute(qGeneFamily);
 	for (Object resultObject : results.asList()) {
@@ -128,7 +129,7 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             for (int tally : tallyMap.values()) {
                 size += tally;
             }
-            gf.setFieldValue("size", gf.getGenes().size());
+            gf.setFieldValue("size", size);
             for (String taxonId : tallyMap.keySet()) {
                 GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
                 gftList.add(gft);
