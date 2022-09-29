@@ -21,7 +21,7 @@ dependencies {
     implementation group: 'org.intermine', name: 'bio-model', version: bioVersion
     implementation group: 'org.intermine', name: 'intermine-integrate', version: imVersion
     bioModel group: 'org.intermine', name: 'bio-model', version: bioVersion, transitive: false
-    implementation group: 'org.intermine', name: 'bio-source-lis-genetic', version: bioVersion
+    implementation group: 'org.intermine', name: 'bio-source-lis-qtl', version: bioVersion
 }
 
 processResources {

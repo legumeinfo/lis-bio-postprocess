@@ -202,7 +202,7 @@ public class PopulateQTLGenesProcess extends PostProcessor {
 
 	@Override
 	public String toString() {
-	    return qtl.getPrimaryIdentifier()+" spans "+chromosomeId+":"+start+"-"+end;
+	    return qtl.getIdentifier()+" spans "+chromosomeId+":"+start+"-"+end;
 	}
     }
         
