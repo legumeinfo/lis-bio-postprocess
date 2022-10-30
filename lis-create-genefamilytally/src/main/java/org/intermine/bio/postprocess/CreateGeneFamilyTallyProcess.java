@@ -99,7 +99,6 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
         QueryClass qcGeneFamily = new QueryClass(GeneFamily.class);
         qGeneFamily.addFrom(qcGeneFamily);
         qGeneFamily.addToSelect(qcGeneFamily);
-        qGeneFamily.addToOrderBy(new QueryField(qcGeneFamily, "identifier"), "desc");
         // execute the query
         Results results = osw.getObjectStore().execute(qGeneFamily);
 	for (Object resultObject : results.asList()) {
