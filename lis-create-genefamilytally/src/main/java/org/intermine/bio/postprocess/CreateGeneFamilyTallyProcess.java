@@ -48,7 +48,7 @@ import org.apache.log4j.Logger;
  *
  * GeneFamily.size
  *
- * GeneFamilyTally.tally
+ * GeneFamilyTally.totalCount
  * GeneFamilyTally.organism
  * GeneFamilyTally.geneFamily
  *
@@ -102,7 +102,7 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
         // execute the query
         Results results = osw.getObjectStore().execute(qGeneFamily);
 	for (Object resultObject : results.asList()) {
-            Map<String,Integer> tallyMap = new HashMap<>();      // keyed by taxonId
+            Map<String,Integer> totalCountMap = new HashMap<>(); // keyed by taxonId
             Map<String,Organism> organismMap = new HashMap<>();  // keyed by taxonId
 	    ResultsRow row = (ResultsRow) resultObject;
             // --
@@ -115,26 +115,26 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
                 Organism organism = g.getOrganism();
                 String taxonId = organism.getTaxonId();
                 if (organismMap.containsKey(taxonId)) {
-                    // increment this organism's tally
-                    tallyMap.put(taxonId, tallyMap.get(taxonId) + 1);
+                    // increment this organism's totalCount
+                    totalCountMap.put(taxonId, totalCountMap.get(taxonId) + 1);
                 } else {
-                    // new organism, initialize tally = 1
+                    // new organism, initialize totalCount = 1
                     organismMap.put(taxonId, organism);
-                    tallyMap.put(taxonId, 1);
+                    totalCountMap.put(taxonId, 1);
                 }
             }
             // sum the tallies for GeneFamily.size
             int size = 0;
-            for (int tally : tallyMap.values()) {
-                size += tally;
+            for (int totalCount : totalCountMap.values()) {
+                size += totalCount;
             }
             gf.setFieldValue("size", size);
-            for (String taxonId : tallyMap.keySet()) {
+            for (String taxonId : totalCountMap.keySet()) {
                 GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
                 gftList.add(gft);
                 gft.setGeneFamily(gf);
                 gft.setOrganism(organismMap.get(taxonId));
-                gft.setTally(tallyMap.get(taxonId));
+                gft.setTotalCount(totalCountMap.get(taxonId));
             }
         }
         // store the GeneFamily objects
