@@ -13,6 +13,7 @@ package org.intermine.bio.postprocess;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +50,8 @@ import org.apache.log4j.Logger;
  * GeneFamily.size
  *
  * GeneFamilyTally.totalCount
+ * GeneFamilyTally.numAnnotations
+ * GeneFamilyTally.averageCount
  * GeneFamilyTally.organism
  * GeneFamilyTally.geneFamily
  *
@@ -92,7 +95,6 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
         System.out.println("## Deleted GeneFamilyTally objects.");
         LOG.info("Deleted GeneFamilyTally objects.");
         // now query GeneFamily and tally gene counts per organism
-        // ATTEMPT: store GeneFamilyTally objects BEFORE storing them
         List<GeneFamily> gfList = new ArrayList<>();
         //
         Query qGeneFamily = new Query();
@@ -102,8 +104,10 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
         // execute the query
         Results results = osw.getObjectStore().execute(qGeneFamily);
 	for (Object resultObject : results.asList()) {
-            Map<String,Integer> totalCountMap = new HashMap<>(); // keyed by taxonId
-            Map<String,Organism> organismMap = new HashMap<>();  // keyed by taxonId
+            Map<String,Organism> organismMap = new HashMap<>();      // keyed by taxonId
+            Map<String,Integer> totalCountMap = new HashMap<>();     // keyed by taxonId
+            Map<String,Integer> numAnnotationsMap = new HashMap<>(); // keyed by taxonId
+            Set<String> annotations = new HashSet<>();               // store the annotations that we've seen: taxonId.strainIdentifier.assemblyVersion.annotationVersion
 	    ResultsRow row = (ResultsRow) resultObject;
             // --
             // use clone so we can store updated object below
@@ -114,6 +118,10 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             for (Gene g : genes) {
                 Organism organism = g.getOrganism();
                 String taxonId = organism.getTaxonId();
+                String strainIdentifier = g.getStrain().getIdentifier();
+                String assemblyVersion = g.getAssemblyVersion();
+                String annotationVersion = g.getAnnotationVersion();
+                String annotation = taxonId + "." + strainIdentifier + "." + assemblyVersion + "." + annotationVersion;
                 if (organismMap.containsKey(taxonId)) {
                     // increment this organism's totalCount
                     totalCountMap.put(taxonId, totalCountMap.get(taxonId) + 1);
@@ -122,6 +130,10 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
                     organismMap.put(taxonId, organism);
                     totalCountMap.put(taxonId, 1);
                 }
+                if (!annotations.contains(annotation)) {
+                    annotations.add(annotation);
+                    numAnnotationsMap.put(taxonId, annotations.size());
+                }
             }
             // sum the tallies for GeneFamily.size
             int size = 0;
@@ -129,12 +141,19 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
                 size += totalCount;
             }
             gf.setFieldValue("size", size);
+            // add the GeneFamilyTally objects for each organism
             for (String taxonId : totalCountMap.keySet()) {
+                Organism organism = organismMap.get(taxonId);
+                int totalCount = totalCountMap.get(taxonId);
+                int numAnnotations = numAnnotationsMap.get(taxonId);
+                double averageCount = (double) totalCount / (double) numAnnotations;
                 GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
                 gftList.add(gft);
                 gft.setGeneFamily(gf);
-                gft.setOrganism(organismMap.get(taxonId));
-                gft.setTotalCount(totalCountMap.get(taxonId));
+                gft.setOrganism(organism);
+                gft.setTotalCount(totalCount);
+                gft.setNumAnnotations(numAnnotations);
+                gft.setAverageCount(averageCount);
             }
         }
         // store the GeneFamily objects
