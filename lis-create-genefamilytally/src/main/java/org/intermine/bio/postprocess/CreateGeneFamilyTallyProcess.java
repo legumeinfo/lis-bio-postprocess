@@ -88,13 +88,12 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             osw.delete(gft);
             osw.commitTransaction();
         }
-        gftList.clear();
-        System.out.println("## Deleted GeneFamilyTally objects.");
-        LOG.info("Deleted GeneFamilyTally objects.");
+        System.out.println("## Deleted " + gftList.size() + " GeneFamilyTally objects.");
+        LOG.info("Deleted " + gftList.size() + " GeneFamilyTally objects.");
         // now query GeneFamily and tally gene counts per organism
         // ATTEMPT: store GeneFamilyTally objects BEFORE storing them
+        gftList = new ArrayList<>();
         List<GeneFamily> gfList = new ArrayList<>();
-        //
         Query qGeneFamily = new Query();
         QueryClass qcGeneFamily = new QueryClass(GeneFamily.class);
         qGeneFamily.addFrom(qcGeneFamily);
@@ -105,45 +104,47 @@ public class CreateGeneFamilyTallyProcess extends PostProcessor {
             Map<String,Integer> tallyMap = new HashMap<>();      // keyed by taxonId
             Map<String,Organism> organismMap = new HashMap<>();  // keyed by taxonId
 	    ResultsRow row = (ResultsRow) resultObject;
-            // --
             // use clone so we can store updated object below
             GeneFamily gf = PostProcessUtil.cloneInterMineObject((GeneFamily) row.get(0));
-            gfList.add(gf);
-            // --
             Set<Gene> genes = gf.getGenes();
-            for (Gene g : genes) {
-                Organism organism = g.getOrganism();
-                String taxonId = organism.getTaxonId();
-                if (organismMap.containsKey(taxonId)) {
-                    // increment this organism's tally
-                    tallyMap.put(taxonId, tallyMap.get(taxonId) + 1);
-                } else {
-                    // new organism, initialize tally = 1
-                    organismMap.put(taxonId, organism);
-                    tallyMap.put(taxonId, 1);
+            if (genes.size() > 0) {
+                gf.setFieldValue("size", genes.size());
+                gfList.add(gf);
+                // tally count per organism
+                for (Gene g : genes) {
+                    if (g.getOrganism() == null) {
+                        throw new RuntimeException("ERROR: gene " + g.getPrimaryIdentifier() + " has null organism reference.");
+                    }
+                    String taxonId = g.getOrganism().getTaxonId();
+                    if (tallyMap.containsKey(taxonId)) {
+                        // increment this organism's tally
+                        tallyMap.put(taxonId, tallyMap.get(taxonId) + 1);
+                    } else {
+                        // new organism, initialize tally = 1
+                        Organism organism = g.getOrganism();
+                        organismMap.put(taxonId, organism);
+                        tallyMap.put(taxonId, 1);
+                    }
                 }
-            }
-            // sum the tallies for GeneFamily.size
-            int size = 0;
-            for (int tally : tallyMap.values()) {
-                size += tally;
-            }
-            gf.setFieldValue("size", size);
-            for (String taxonId : tallyMap.keySet()) {
-                GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
-                gftList.add(gft);
-                gft.setGeneFamily(gf);
-                gft.setOrganism(organismMap.get(taxonId));
-                gft.setTally(tallyMap.get(taxonId));
+                // create the GeneFamilyTally for this GeneFamily per Organism
+                for (String taxonId : tallyMap.keySet()) {
+                    GeneFamilyTally gft = (GeneFamilyTally) DynamicUtil.createObject(Collections.singleton(GeneFamilyTally.class));
+                    gft.setGeneFamily(gf);
+                    gft.setOrganism(organismMap.get(taxonId));
+                    gft.setTally(tallyMap.get(taxonId));
+                    gftList.add(gft);
+                }
             }
         }
         // store the GeneFamily objects
+        System.out.println("## Storing " + gfList.size() + " GeneFamily objects.");
         osw.beginTransaction();
         for (GeneFamily gf : gfList) {
             osw.store(gf);
         }
         osw.commitTransaction();
         // store the GeneFamilyTally objects
+        System.out.println("## Storing " + gftList.size() + " GeneFamilyTally objects.");
         osw.beginTransaction();
         for (GeneFamilyTally gft : gftList) {
             osw.store(gft);
