@@ -20,7 +20,6 @@ import java.util.Set;
 
 import org.intermine.bio.util.PostProcessUtil;
 import org.intermine.postprocess.PostProcessor;
-import org.intermine.metadata.ConstraintOp;
 
 import org.intermine.objectstore.ObjectStore;
 import org.intermine.objectstore.ObjectStoreException;
@@ -32,7 +31,6 @@ import org.intermine.objectstore.query.QueryField;
 import org.intermine.objectstore.query.QueryValue;
 import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
-import org.intermine.objectstore.query.SimpleConstraint;
 
 import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.GeneFamily;
