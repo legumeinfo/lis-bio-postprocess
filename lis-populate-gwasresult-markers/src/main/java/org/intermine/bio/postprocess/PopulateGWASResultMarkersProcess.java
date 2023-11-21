@@ -88,35 +88,6 @@ public class PopulateGWASResultMarkersProcess extends PostProcessor {
         QueryField markerGenotypingPlatform = new QueryField(qcMarker, "genotypingPlatform");
 	constraints.addConstraint(new SimpleConstraint(markerGenotypingPlatform, ConstraintOp.EQUALS, gwasGenotypingPlatform));
         q.setConstraint(constraints);
-
-
-	    // Query qGene = new Query();
-	    // qGene.setDistinct(false);
-	    // ConstraintSet csGene = new ConstraintSet(ConstraintOp.AND);
-	    // // 0 Gene
-	    // QueryClass qcGene = new QueryClass(Gene.class);
-	    // qGene.addFrom(qcGene);
-	    // qGene.addToSelect(qcGene);
-	    // // 1 Gene.chromosome
-	    // QueryClass qcGeneChromosome = new QueryClass(Chromosome.class);
-	    // qGene.addFrom(qcGeneChromosome);
-	    // qGene.addToSelect(qcGeneChromosome);
-	    // QueryObjectReference geneChromosome = new QueryObjectReference(qcGene, "chromosome");
-	    // csGene.addConstraint(new ContainsConstraint(geneChromosome, ConstraintOp.CONTAINS, qcGeneChromosome));
-	    // // 2 Gene.chromosomeLocation
-	    // QueryClass qcGeneLocation = new QueryClass(Location.class);
-	    // qGene.addFrom(qcGeneLocation);
-	    // qGene.addToSelect(qcGeneLocation);
-	    // QueryObjectReference geneLocation = new QueryObjectReference(qcGene, "chromosomeLocation");
-	    // csGene.addConstraint(new ContainsConstraint(geneLocation, ConstraintOp.CONTAINS, qcGeneLocation));
-	    // // require that the gene's chromosome equal that of QTLSpan
-	    // QueryValue qtlChromosomeIdValue = new QueryValue(qtlSpan.chromosomeId);
-	    // QueryField geneChromosomeIdField = new QueryField(qcGeneChromosome, "primaryIdentifier");
-	    // SimpleConstraint sameChromosomeConstraint = new SimpleConstraint(qtlChromosomeIdValue, ConstraintOp.EQUALS, geneChromosomeIdField);
-	    // csGene.addConstraint(sameChromosomeConstraint);
-
-
-
         // execute the query
         Results results = osw.getObjectStore().execute(q);
         // store GeneticMarkers in a map keyed by GWASResult.id
