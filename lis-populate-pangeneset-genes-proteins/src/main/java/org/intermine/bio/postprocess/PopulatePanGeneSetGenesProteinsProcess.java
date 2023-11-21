@@ -47,8 +47,6 @@ public class PopulatePanGeneSetGenesProteinsProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulatePanGeneSetGenesProteinsProcess.class);
 
     /**
-     * Populate a new instance of PopulateQTLMarkersProcess
-     *
      * @param osw object store writer
      */
     public PopulatePanGeneSetGenesProteinsProcess(ObjectStoreWriter osw) {
