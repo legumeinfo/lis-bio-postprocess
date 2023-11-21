@@ -59,54 +59,37 @@ public class PopulatePanGeneSetGenesProteinsProcess extends PostProcessor {
      * {@inheritDoc}
      */
     public void postProcess() throws ObjectStoreException {
-        // query Transcripts that have gene and protein references
-        List<Transcript> transcripts = new ArrayList<>();
-        Query qTranscript = new Query();
-        QueryClass qcTranscript = new QueryClass(Transcript.class);
-        qTranscript.addFrom(qcTranscript);
-        qTranscript.addToSelect(qcTranscript);
-        Results results = osw.getObjectStore().execute(qTranscript);
+        // query PanGeneSets
+        List<PanGeneSet> panGeneSets = new ArrayList<>();
+        Query qPanGeneSet = new Query();
+        QueryClass qcPanGeneSet = new QueryClass(PanGeneSet.class);
+        qPanGeneSet.addFrom(qcPanGeneSet);
+        qPanGeneSet.addToSelect(qcPanGeneSet);
+        Results results = osw.getObjectStore().execute(qPanGeneSet);
         for (Object obj : results.asList()) {
             ResultsRow row = (ResultsRow) obj;
-            Transcript transcript = (Transcript) row.get(0);
-            if (transcript.getProtein() != null) {
-                transcripts.add(transcript);
-                // TIMING
-                if (transcripts.size() > 10000) break;
-                //
-            }
+            PanGeneSet panGeneSet = (PanGeneSet) row.get(0);
+            panGeneSets.add(panGeneSet);
         }
-        LOG.info("Found " + transcripts.size() + " transcripts with protein references.");
+        LOG.info("Found " + panGeneSets.size() + " PanGeneSets.");
 
-        // spin through the Transcripts, getting their panGeneSets, protein and the protein's genes
-        // then add the protein and genes to the panGeneSet maps.
+        // spin through the PanGeneSets, getting their transcripot, and that transcript's, protein and that protein's genes.
         Map<PanGeneSet, Set<Protein>> panGeneSetProteins = new HashMap<>();
         Map<PanGeneSet, Set<Gene>> panGeneSetGenes = new HashMap<>();
-        for (Transcript transcript : transcripts) {
-            final Protein protein = transcript.getProtein();
-            final Set<Gene> genes = protein.getGenes(); // this set is a ProxyCollection and does not support typical Set operations
-            for (PanGeneSet panGeneSet : transcript.getPanGeneSets()) {
-                if (panGeneSetProteins.containsKey(panGeneSet)) {
-                    panGeneSetProteins.get(panGeneSet).add(protein);
-                } else {
-                    Set<Protein> set = new HashSet<>();
-                    set.add(protein);
-                    panGeneSetProteins.put(panGeneSet, set);
-                }
-                if (panGeneSetGenes.containsKey(panGeneSet)) {
-                    for (Gene gene : genes) {
-                        panGeneSetGenes.get(panGeneSet).add(gene);
-                    }
-                } else {
-                    // create a proper HashSet
-                    Set<Gene> set = new HashSet<>();
-                    set.addAll(genes);
-                    panGeneSetGenes.put(panGeneSet, set);
+        for (PanGeneSet panGeneSet : panGeneSets) {
+            Set<Protein> proteins = new HashSet<>();
+            Set<Gene> genes = new HashSet<>();
+            for (Transcript transcript : panGeneSet.getTranscripts()) {
+                if (transcript.getProtein() != null && transcript.getProtein().getGenes() != null) {
+                    proteins.add(transcript.getProtein());
+                    genes.addAll(transcript.getProtein().getGenes());
                 }
             }
+            panGeneSetProteins.put(panGeneSet, proteins);
+            panGeneSetGenes.put(panGeneSet, genes);
         }
 
-        // now store our sets
+        // now store our protein and gene sets with the PanGeneSets
         osw.beginTransaction();
         for (PanGeneSet pgs : panGeneSetProteins.keySet()) {
             try {
