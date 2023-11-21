@@ -71,23 +71,24 @@ public class PopulatePanGeneSetGenesProteinsProcess extends PostProcessor {
             Transcript transcript = (Transcript) row.get(0);
             if (transcript.getProtein() != null) {
                 transcripts.add(transcript);
+                // TIMING
+                if (transcripts.size() > 10000) break;
+                //
             }
         }
         LOG.info("Found " + transcripts.size() + " transcripts with protein references.");
 
         // spin through the Transcripts, getting their panGeneSets, protein and the protein's genes
         // then add the protein and genes to the panGeneSet maps.
-        // Note: these sets are ProxyCollections and cannot be used in typical Set operations!
         Map<PanGeneSet, Set<Protein>> panGeneSetProteins = new HashMap<>();
         Map<PanGeneSet, Set<Gene>> panGeneSetGenes = new HashMap<>();
         for (Transcript transcript : transcripts) {
             final Protein protein = transcript.getProtein();
-            final Set<Gene> genes = protein.getGenes();
+            final Set<Gene> genes = protein.getGenes(); // this set is a ProxyCollection and does not support typical Set operations
             for (PanGeneSet panGeneSet : transcript.getPanGeneSets()) {
                 if (panGeneSetProteins.containsKey(panGeneSet)) {
                     panGeneSetProteins.get(panGeneSet).add(protein);
                 } else {
-                    // create a proper HashSet
                     Set<Protein> set = new HashSet<>();
                     set.add(protein);
                     panGeneSetProteins.put(panGeneSet, set);
