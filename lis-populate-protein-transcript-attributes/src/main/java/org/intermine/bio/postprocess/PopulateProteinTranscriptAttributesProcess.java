@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.intermine.bio.util.PostProcessUtil;
 import org.intermine.postprocess.PostProcessor;
@@ -73,41 +74,43 @@ public class PopulateProteinTranscriptAttributesProcess extends PostProcessor {
         }
         LOG.info("Found " + proteins.size() + " proteins that lack name or description.");
 
-        // spin through the Proteins, getting their associated transcript and gene(s), and grabbing the Gene.name and Gene.description
-        Map<Protein,String> proteinNames = new HashMap<>();
-        Map<Protein,String> proteinDescriptions = new HashMap<>();
-        Map<Transcript,String> transcriptNames = new HashMap<>();
-        Map<Transcript,String> transcriptDescriptions = new HashMap<>();
-        for (Protein protein : proteins) {
-            Transcript transcript = protein.getTranscript();
-            Set<Gene> genes = protein.getGenes();
-            String name = null;
-            String description = null;
-            for (Gene gene : genes) {
-                if (gene.getName() != null) name = gene.getName();
-                if (gene.getDescription() != null) description = gene.getDescription();
-            }
-            if (name != null) {
-                proteinNames.put(protein, name);
-                transcriptNames.put(transcript, name);
-            }
-            if (description != null) {
-                proteinDescriptions.put(protein, description);
-                transcriptDescriptions.put(transcript, description);
-            }
-        }
-        Set<Transcript> transcriptsToUpdate = transcriptNames.keySet();
-        transcriptsToUpdate.addAll(transcriptDescriptions.keySet());
+        //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+        // spin through the Proteins, getting their associated transcript and gene(s), grabbing the Gene.name and Gene.description
+        Map<Protein,String> proteinNames = new ConcurrentHashMap<>();
+        Map<Protein,String> proteinDescriptions = new ConcurrentHashMap<>();
+        Map<Transcript,String> transcriptNames = new ConcurrentHashMap<>();
+        Map<Transcript,String> transcriptDescriptions = new ConcurrentHashMap<>();
+        proteins.parallelStream().forEach(protein -> {
+                Transcript transcript = protein.getTranscript();
+                Set<Gene> genes = protein.getGenes();
+                String name = null;
+                String description = null;
+                for (Gene gene : genes) {
+                    if (gene.getName() != null) name = gene.getName();
+                    if (gene.getDescription() != null) description = gene.getDescription();
+                }
+                if (name != null) {
+                    proteinNames.put(protein, name);
+                    transcriptNames.put(transcript, name);
+                }
+                if (description != null) {
+                    proteinDescriptions.put(protein, description);
+                    transcriptDescriptions.put(transcript, description);
+                }
+            });
         Set<Protein> proteinsToUpdate = proteinNames.keySet();
         proteinsToUpdate.addAll(proteinDescriptions.keySet());
+        Set<Transcript> transcriptsToUpdate = transcriptNames.keySet();
+        transcriptsToUpdate.addAll(transcriptDescriptions.keySet());
 
-        // update and store Transcripts
+        // update and store Proteins
+        LOG.info("Updating " + proteinsToUpdate.size() + " proteins...");
         osw.beginTransaction();
-        for (Transcript transcript : transcriptsToUpdate) {
+        for (Protein protein : proteinsToUpdate) {
             try {
-                Transcript clone = PostProcessUtil.cloneInterMineObject(transcript);
-                if (transcriptNames.containsKey(transcript)) clone.setName(transcriptNames.get(transcript));
-                if (transcriptDescriptions.containsKey(transcript)) clone.setDescription(transcriptNames.get(transcript));
+                Protein clone = PostProcessUtil.cloneInterMineObject(protein);
+                if (proteinNames.containsKey(protein)) clone.setName(proteinNames.get(protein));
+                if (proteinDescriptions.containsKey(protein)) clone.setDescription(proteinNames.get(protein));
                 osw.store(clone);
             } catch (IllegalAccessException ex) {
                 System.err.println(ex);
@@ -115,14 +118,15 @@ public class PopulateProteinTranscriptAttributesProcess extends PostProcessor {
             }
         }
         osw.commitTransaction();
-
-        // update and store Proteins
+        
+        // update and store Transcripts
+        LOG.info("Updating " + transcriptsToUpdate.size() + " transcripts...");
         osw.beginTransaction();
-        for (Protein protein : proteinsToUpdate) {
+        for (Transcript transcript : transcriptsToUpdate) {
             try {
-                Protein clone = PostProcessUtil.cloneInterMineObject(protein);
-                if (proteinNames.containsKey(protein)) clone.setName(proteinNames.get(protein));
-                if (proteinDescriptions.containsKey(protein)) clone.setDescription(proteinNames.get(protein));
+                Transcript clone = PostProcessUtil.cloneInterMineObject(transcript);
+                if (transcriptNames.containsKey(transcript)) clone.setName(transcriptNames.get(transcript));
+                if (transcriptDescriptions.containsKey(transcript)) clone.setDescription(transcriptNames.get(transcript));
                 osw.store(clone);
             } catch (IllegalAccessException ex) {
                 System.err.println(ex);
