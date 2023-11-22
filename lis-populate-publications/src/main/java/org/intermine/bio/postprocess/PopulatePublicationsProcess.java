@@ -57,9 +57,6 @@ public class PopulatePublicationsProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulatePublicationsProcess.class);
     private static final String API_KEY = "48cb39fb23bf1190394ccbae4e1d35c5c809";
 
-    // hold authors in a map so we don't store dupes; keyed by name
-    Map<String,Author> authorMap = new HashMap<String,Author>();
-
     /**
      * Construct with an ObjectStoreWriter, read and write from the same ObjectStore
      * @param osw object store writer
@@ -82,20 +79,27 @@ public class PopulatePublicationsProcess extends PostProcessor {
         QueryClass qcAuthor = new QueryClass(Author.class);
         qAuthor.addToSelect(qcAuthor);
         qAuthor.addFrom(qcAuthor);
-        Set<Author> authorSet = new HashSet<Author>();
+        Set<Author> authorsToDelete = new HashSet<Author>();
         Results authorResults = osw.getObjectStore().execute(qAuthor);
-        Iterator<?> authorIter = authorResults.iterator();
-        while (authorIter.hasNext()) {
-            ResultsRow<?> rr = (ResultsRow<?>) authorIter.next();
-            authorSet.add((Author)rr.get(0));
+        for (Object obj : authorResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            Author author = (Author) row.get(0);
+            authorsToDelete.add(author);
         }
+        
         // delete them one by one (because bulk deletion is broken)
         // NOTE: this does not delete authorspublications records. That is a bug IMO.
-        for (Author author : authorSet) {
-            osw.beginTransaction();
+        osw.beginTransaction();
+        for (Author author : authorsToDelete) {
             osw.delete(author);
-            osw.commitTransaction();
         }
+        osw.commitTransaction();
+
+        // hold authors in a map so we don't store dupes
+        Map<String,Author> authorMap = new HashMap<>(); // ; keyed by name!!
+
+        // hold publications in a set for final storage
+        Set<Publication> publications = new HashSet<>();
         
         // query all publications
         Query qPub = new Query();
@@ -103,13 +107,11 @@ public class PopulatePublicationsProcess extends PostProcessor {
         QueryClass qcPub = new QueryClass(Publication.class);
         qPub.addToSelect(qcPub);
         qPub.addFrom(qcPub);
-        
         // execute the query
         Results pubResults = osw.getObjectStore().execute(qPub);
-        Iterator<?> pubIter = pubResults.iterator();
-        while (pubIter.hasNext()) {
-            ResultsRow<?> rrPub = (ResultsRow<?>) pubIter.next();
-            Publication pub = (Publication) rrPub.get(0);
+        for (Object obj : pubResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            Publication pub = (Publication) row.get(0);
             // field values
             String title = stringOrNull(pub.getFieldValue("title"));
             String firstAuthor = stringOrNull(pub.getFieldValue("firstAuthor"));
@@ -124,27 +126,21 @@ public class PopulatePublicationsProcess extends PostProcessor {
             String abstractText = stringOrNull(pub.getFieldValue("abstractText"));
             int pubMedId = intOrZero(pub.getFieldValue("pubMedId"));
             String doi = stringOrNull(pub.getFieldValue("doi"));
-            LOG.info("##### "+doi);
-            if (doi==null) {
-                LOG.error("Publication missing DOI: "+title);
+            if (doi == null) {
+                LOG.error("Publication is missing DOI: " + title);
                 continue;
             }
-
             // query PubMed for data from DOI to get PMID
-            if (pubMedId==0) {
+            if (pubMedId == 0) {
                 PubMedSummary summary = new PubMedSummary();
                 summary.searchDOI(doi, API_KEY);
-                if (summary.id!=0) {
-                    pubMedId = summary.id;
-                    LOG.info("PMID found from DOI:"+pubMedId);
-                }
+                if (summary.id != 0) pubMedId = summary.id;
             }
-
             // query CrossRef entry from DOI
             WorksQuery wq = null;
-            JSONArray authors = null;
+            JSONArray authorsJSON = null;
             wq = new WorksQuery(doi);
-            if (wq.getStatus()!=null && wq.getStatus().equals("ok")) {
+            if (wq.getStatus() != null && wq.getStatus().equals("ok")) {
                 // update attributes from CrossRef
                 title = wq.getTitle();
                 try { year = wq.getJournalIssueYear(); } catch (Exception ex) { }
@@ -164,40 +160,37 @@ public class PopulatePublicationsProcess extends PostProcessor {
                 issue = wq.getIssue();
                 pages = wq.getPage();
                 doi = wq.getDOI();
-                authors = wq.getAuthors();
-                if (authors!=null && authors.size()>0) {
-                    JSONObject firstAuthorObject = (JSONObject) authors.get(0);
+                authorsJSON = wq.getAuthors();
+                if (authorsJSON!=null && authorsJSON.size()>0) {
+                    JSONObject firstAuthorObject = (JSONObject) authorsJSON.get(0);
                     firstAuthor = (String) firstAuthorObject.get("family");
                     if (firstAuthorObject.get("given")!=null) firstAuthor += ", " + (String) firstAuthorObject.get("given");
                 }
-                
                 // core IM model does not contain lastAuthor
-                // if (authors.size()>1) {
-                //     JSONObject lastAuthorObject = (JSONObject) authors.get(authors.size()-1);
+                // if (authorsJSON.size()>1) {
+                //     JSONObject lastAuthorObject = (JSONObject) authorsJSON.get(authorsJSON.size()-1);
                 //     lastAuthor = lastAuthorObject.get("family")+", "+lastAuthorObject.get("given");
                 // }
-
-                // update publication object
-                Publication tempPub = PostProcessUtil.cloneInterMineObject(pub);
-                if (title!=null) tempPub.setFieldValue("title", title);
-                if (firstAuthor!=null) tempPub.setFieldValue("firstAuthor", firstAuthor);
-                if (month!=null && !month.equals("0")) tempPub.setFieldValue("month", month);
-                if (year>0) tempPub.setFieldValue("year", year);
-                if (journal!=null) tempPub.setFieldValue("journal", journal);
-                if (volume!=null) tempPub.setFieldValue("volume", volume);
-                if (issue!=null) tempPub.setFieldValue("issue", issue);
-                if (pages!=null) tempPub.setFieldValue("pages", pages);
-                if (pubMedId>0) tempPub.setFieldValue("pubMedId", String.valueOf(pubMedId));
-                if (doi!=null) tempPub.setFieldValue("doi", doi);
+                // update publication
+                if (title!=null) pub.setFieldValue("title", title);
+                if (firstAuthor!=null) pub.setFieldValue("firstAuthor", firstAuthor);
+                if (month!=null && !month.equals("0")) pub.setFieldValue("month", month);
+                if (year>0) pub.setFieldValue("year", year);
+                if (journal!=null) pub.setFieldValue("journal", journal);
+                if (volume!=null) pub.setFieldValue("volume", volume);
+                if (issue!=null) pub.setFieldValue("issue", issue);
+                if (pages!=null) pub.setFieldValue("pages", pages);
+                if (pubMedId>0) pub.setFieldValue("pubMedId", String.valueOf(pubMedId));
+                if (doi!=null) pub.setFieldValue("doi", doi);
                 // core IM model does not contain lastAuthor
-                // if (lastAuthor!=null) tempPub.setFieldValue("lastAuthor", lastAuthor);
+                // if (lastAuthor!=null) pub.setFieldValue("lastAuthor", lastAuthor);
                 
-                if (authors!=null) {
+                if (authorsJSON != null) {
                     // update publication.authors from CrossRef since it provides given and family names; given often includes initials, e.g. "Douglas R"
                     // place this pub's authors in a set to add to its authors collection; store the ones that are new
-                    authorSet = new HashSet<Author>();
-                    for (Object authorObject : authors)  {
-                        JSONObject authorJSON = (JSONObject) authorObject;
+                    Set<Author> authorSet = new HashSet<Author>(); // authors of this publication
+                    for (Object object : authorsJSON)  {
+                        JSONObject authorJSON = (JSONObject) object;
                         // IM Author attributes from CrossRef fields
                         String firstName = null; // there are rare occasions when firstName is missing, so we'll fill that in with a placeholder "X"
                         if (authorJSON.get("given")==null) {
@@ -238,31 +231,41 @@ public class PopulatePublicationsProcess extends PostProcessor {
                         String name = firstName+" "+lastName;
                         Author author;
                         if (authorMap.containsKey(name)) {
-                            author = authorMap.get(name);
+                            author = authorMap.get(name); // we key authors on name
                         } else {
                             author = (Author) DynamicUtil.createObject(Collections.singleton(Author.class));
                             author.setFieldValue("firstName", firstName);
                             author.setFieldValue("lastName", lastName);
                             author.setFieldValue("name", name);
-                            if (initials!=null) author.setFieldValue("initials", initials);
-                            osw.beginTransaction();
-                            osw.store(author);
-                            osw.commitTransaction();
+                            if (initials != null) author.setFieldValue("initials", initials);
                             authorMap.put(name, author);
                         }
-                        authorSet.add(author);
+                        authorSet.add(author); // authors of this pub
                     }
-                    // put these authors into the pub authors collection
-                    if (authorSet.size()>0) {
-                        tempPub.setFieldValue("authors", authorSet);
+                    // put these authors into this pub's authors collection
+                    if (authorSet.size() > 0) {
+                        pub.setFieldValue("authors", authorSet);
                     }
+                    // save updated publication
+                    publications.add(pub);
                 }
-                // store this publication
-                osw.beginTransaction();
-                osw.store(tempPub);
-                osw.commitTransaction();
             }
         }
+
+        // store the authors, which are new so no clone required
+        osw.beginTransaction();
+        for (Author author : authorMap.values()) {
+            osw.store(author);
+        }
+        osw.commitTransaction();
+        
+        // store the updated publications
+        osw.beginTransaction();
+        for (Publication publication : publications) {
+            Publication clone = PostProcessUtil.cloneInterMineObject(publication);
+            osw.store(clone);
+        }
+        osw.commitTransaction();
     }
 
     /**

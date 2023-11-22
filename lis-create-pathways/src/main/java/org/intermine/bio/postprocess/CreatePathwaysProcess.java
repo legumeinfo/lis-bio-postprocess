@@ -22,6 +22,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.intermine.bio.util.PostProcessUtil;
 
@@ -97,8 +99,7 @@ public class CreatePathwaysProcess extends PostProcessor {
             osw.delete(pathway);
         }
         osw.commitTransaction();
-        System.out.println("### Deleted " + oldPathways.size() + " Pathway objects.");
-        LOG.info("### Deleted " + oldPathways.size() + " Pathway objects.");
+        LOG.info("Deleted " + oldPathways.size() + " Pathway objects.");
 
         // use existing Gramene DataSource if it exists (could be stuff other than Plant Reactome)
         Query qDataSource = new Query();
@@ -124,11 +125,9 @@ public class CreatePathwaysProcess extends PostProcessor {
             osw.beginTransaction();
             osw.store(dataSource);
             osw.commitTransaction();
-            System.out.println("### Stored new Gramene DataSource.");
-            LOG.info("### Stored new Gramene DataSource.");
+            LOG.info("Stored new Gramene DataSource.");
         } else {
-            System.out.println("### Using existing Gramene DataSource.");
-            LOG.info("### Using existing Gramene DataSource.");
+            LOG.info("Using existing Gramene DataSource.");
         }
         
         // delete the existing Plant Reactome DataSet, if present, since version may have changed
@@ -151,33 +150,30 @@ public class CreatePathwaysProcess extends PostProcessor {
             osw.delete(dataSet);
         }
         osw.commitTransaction();
-        System.out.println("### Deleted " + oldDataSets.size() + " Plant Reactome DataSet objects.");
-        LOG.info("### Deleted " + oldDataSets.size() + " DataSet objects.");
+        LOG.info("Deleted " + oldDataSets.size() + " Plant Reactome DataSet objects.");
         
         // create and store the new Plant Reactome DataSet
         DataSet dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
         dataSet.setName("Plant Reactome");
         dataSet.setUrl("https://plantreactome.gramene.org/");
         dataSet.setDescription("PLANT REACTOME is an open-source, open access, manually curated and peer-reviewed pathway database. " +
-                                  "Pathway annotations are authored by expert biologists, in collaboration with the Reactome editorial " +
-                                  "staff and cross-referenced to many bioinformatics databases. " +
-                                  "These include project databases like Gramene, Ensembl, UniProt, ChEBI small molecule databases, " +
-                                  "PubMed, and Gene Ontology.");
+                               "Pathway annotations are authored by expert biologists, in collaboration with the Reactome editorial " +
+                               "staff and cross-referenced to many bioinformatics databases. " +
+                               "These include project databases like Gramene, Ensembl, UniProt, ChEBI small molecule databases, " +
+                               "PubMed, and Gene Ontology.");
         dataSet.setLicence("CC BY 3.0");
         dataSet.setVersion(PLANT_REACTOME_VERSION);
         dataSet.setDataSource(dataSource);
         osw.beginTransaction();
         osw.store(dataSet);
         osw.commitTransaction();
-        System.out.println("### Stored new Plant Reactome DataSet.");
-        LOG.info("### Stored new Plant Reactome DataSet.");
+        LOG.info("Stored new Plant Reactome DataSet object.");
         
         // load the Plant Reactome gene file into maps of identifier/name lists keyed by gene
         // 0=identifier         1=name                  2=species               3=gene
         // R-PVU-1119430.1	Chorismate biosynthesis	Phaseolus vulgaris	PHAVU_002G106700g
-        Map<String,String> pathwayIdentifierName = new HashMap<>();             // pathway identifier to name
-        Map<String,List<String>> geneNamePathwayIdentifiers = new HashMap<>();  // gene name to list of pathway identifiers
-        Map<String,List<String>> geneNamePathwayNames = new HashMap<>();        // gene name to list of pathway names
+        Map<String,String> pathwayIdentifierName = new HashMap<>();                // pathway identifier to pathway name
+        Map<String,Set<String>> ensemblNamePathwayIdentifiers = new HashMap<>();  // gene Ensembl name to set of pathway identifiers
         InputStream is = getClass().getClassLoader().getResourceAsStream(PLANT_REACTOME_GENE_FILE);
         if (is == null) throw new RuntimeException("Could not load Plant Reactome gene file " + PLANT_REACTOME_GENE_FILE);
         BufferedReader reader = new BufferedReader(new InputStreamReader(is));
@@ -188,94 +184,83 @@ public class CreatePathwaysProcess extends PostProcessor {
                 String pathwayIdentifier = fields[0];
                 String pathwayName = fields[1];
                 String species = fields[2];
-                String geneName = fields[3];
+                String ensemblName = fields[3];
                 pathwayIdentifierName.put(pathwayIdentifier, pathwayName);
-                if (geneNamePathwayIdentifiers.containsKey(geneName)) {
-                    geneNamePathwayIdentifiers.get(geneName).add(pathwayIdentifier);
-                    geneNamePathwayNames.get(geneName).add(pathwayName);
+                if (ensemblNamePathwayIdentifiers.containsKey(ensemblName)) {
+                    ensemblNamePathwayIdentifiers.get(ensemblName).add(pathwayIdentifier);
                 } else {
-                    List<String> pathwayIdentifiers = new ArrayList<>();
-                    List<String> pathwayNames = new ArrayList<>();
+                    Set<String> pathwayIdentifiers = new HashSet<>();
                     pathwayIdentifiers.add(pathwayIdentifier);
-                    pathwayNames.add(pathwayName);
-                    geneNamePathwayIdentifiers.put(geneName, pathwayIdentifiers);
-                    geneNamePathwayNames.put(geneName, pathwayNames);
+                    ensemblNamePathwayIdentifiers.put(ensemblName, pathwayIdentifiers);
                 }
             }
         }
         
-        // query all genes in the mine
+        // query all genes in the mine WITH Ensembl names and put into genes set
         Query qGene = new Query();
         QueryClass qcGene = new QueryClass(Gene.class);
         qGene.addFrom(qcGene);
         qGene.addToSelect(qcGene);
         // execute the query
         Results geneResults = osw.getObjectStore().execute(qGene);
-        // store Genes in a Map keyed by id IF they have non-null ensemblName
-        Map<Integer,Gene> genes = new HashMap<>();
+        Set<Gene> genes = new HashSet<>();
 	for (Object resultObject : geneResults.asList()) {
 	    ResultsRow row = (ResultsRow) resultObject;
             Gene gene = (Gene) row.get(0);
             if (gene.getEnsemblName() != null) {
-                genes.put(gene.getId(), gene);
+                genes.add(gene);
             }
 	}
 
-        // run through the genes and populate gene-pathway maps
-        Map<Gene,List<String>> genePathwayIdentifiers  = new HashMap<>();
-        Map<Gene,List<String>> genePathwayNames  = new HashMap<>();
-        for (Gene gene : genes.values()) {
-            List<String> pathwayIdentifiers = geneNamePathwayIdentifiers.get(gene.getEnsemblName());
-            List<String> pathwayNames = geneNamePathwayNames.get(gene.getEnsemblName());
-            if (pathwayIdentifiers != null) {
-                genePathwayIdentifiers.put(gene, pathwayIdentifiers);
-                genePathwayNames.put(gene, pathwayNames);
-            }
-        }
+        ///////////////////////////////////////////////////////////////////////////////////////////////
+        // populate gene-pathway identifier map and set of pathway identifiers to store
+        Map<Gene,Set<String>> genePathwayIdentifiers  = new ConcurrentHashMap<>();
+        Set<String> storedPathwayIdentifiers = new ConcurrentSkipListSet<>();
+        genes.parallelStream().forEach(gene -> {
+                String ensemblName = gene.getEnsemblName();
+                if (ensemblNamePathwayIdentifiers.containsKey(ensemblName)) {
+                    Set<String> identifiers = ensemblNamePathwayIdentifiers.get(ensemblName);
+                    genePathwayIdentifiers.put(gene, identifiers);
+                    storedPathwayIdentifiers.addAll(identifiers);
+                }
+            });
+        ///////////////////////////////////////////////////////////////////////////////////////////////
 
-        // load a map of pathway identifier to pathway name to only store those assocated with our genes
-        Map<String,String> storedPathwayIdentifierName = new HashMap<>();
-        for (Gene gene : genePathwayIdentifiers.keySet()) {
-            List<String> identifiers = genePathwayIdentifiers.get(gene);
-            List<String> names = genePathwayNames.get(gene);
-            for (int i = 0; i < identifiers.size(); i++) {
-                storedPathwayIdentifierName.put(identifiers.get(i), names.get(i));
-            }
-        }
+        ///////////////////////////////////////////////////////////////////////////////////////////////
+        // create our pathways associated with a gene in the mine and store in a map
+        Map<String,Pathway> pathways = new ConcurrentHashMap<>();
+        storedPathwayIdentifiers.parallelStream().forEach(identifier -> {
+                Pathway pathway = (Pathway) DynamicUtil.createObject(Collections.singleton(Pathway.class));
+                pathway.setPrimaryIdentifier(identifier);
+                pathway.setName(pathwayIdentifierName.get(identifier));
+                pathway.addDataSets(dataSet);
+                pathways.put(identifier, pathway);
+            });
+        ///////////////////////////////////////////////////////////////////////////////////////////////
         
-        // store the pathways associated with genes in the mine
-        // and save the Pathway objects in a map for gene updates
-        Map<String,Pathway> pathways = new HashMap<>();
-	osw.beginTransaction();
-        for (String identifier : storedPathwayIdentifierName.keySet()) {
-            String name = storedPathwayIdentifierName.get(identifier);
-            Pathway pathway = (Pathway) DynamicUtil.createObject(Collections.singleton(Pathway.class));
-            pathway.setPrimaryIdentifier(identifier);
-            pathway.setName(name);
-            pathway.addDataSets(dataSet);
+        // store the pathways
+        osw.beginTransaction();
+        for (Pathway pathway : pathways.values()) {
             osw.store(pathway);
-            pathways.put(identifier, pathway);
         }
         osw.commitTransaction();
-        System.out.println("### Stored " + storedPathwayIdentifierName.size() + " Pathway objects.");
-        LOG.info("### Stored " + storedPathwayIdentifierName.size() + " Pathway objects.");
+        LOG.info("Stored " + storedPathwayIdentifiers.size() + " Pathway objects.");
 
-        // update Gene.pathways collection
-	osw.beginTransaction();
-        for (Gene g : genePathwayIdentifiers.keySet()) {
-            Gene gene = PostProcessUtil.cloneInterMineObject(g);
+        // set the Gene.pathways collection
+        osw.beginTransaction();
+        for (Gene gene : genePathwayIdentifiers.keySet()) {
             Set<Pathway> genePathways = new HashSet<>();
-            for (String identifier : genePathwayIdentifiers.get(g)) {
+            for (String identifier : genePathwayIdentifiers.get(gene)) {
                 genePathways.add(pathways.get(identifier));
             }
             // NOTE: not sure why I have to use setFieldValue rather than addPathways or setPathways
             // when using cloneInterMineObject.
-            gene.setFieldValue("pathways", genePathways);
-            osw.store(gene);
+            Gene clone = PostProcessUtil.cloneInterMineObject(gene);
+            clone.setFieldValue("pathways", genePathways);
+            osw.store(clone);
         }
         osw.commitTransaction();
-        System.out.println("### Updated " + genePathwayIdentifiers.size() + " Gene objects.");
-        LOG.info("### Updated " + genePathwayIdentifiers.size() + " Gene objects.");
+        LOG.info("Updated pathways collection for " + genePathwayIdentifiers.size() + " Gene objects.");
             
         // close the ObjectStoreWriter
         osw.close();

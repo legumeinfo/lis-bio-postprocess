@@ -5,7 +5,6 @@ include ':bio-postprocess-lis-populate-gwasresult-markers',
     ':bio-postprocess-lis-populate-publications',
     ':bio-postprocess-lis-populate-qtl-genes',
     ':bio-postprocess-lis-populate-qtl-markers',
-    ':bio-postprocess-lis-populate-genotypingrecord-markers',
     ':bio-postprocess-lis-create-genefamilytally',
     ':bio-postprocess-lis-create-pathways',
     ':bio-postprocess-lis-populate-pangeneset-genes-proteins',
@@ -16,7 +15,6 @@ project(':bio-postprocess-lis-populate-marker-linkagegrouppositions').projectDir
 project(':bio-postprocess-lis-populate-publications').projectDir                  = new File(settingsDir, 'lis-populate-publications')
 project(':bio-postprocess-lis-populate-qtl-genes').projectDir                     = new File(settingsDir, 'lis-populate-qtl-genes')
 project(':bio-postprocess-lis-populate-qtl-markers').projectDir                   = new File(settingsDir, 'lis-populate-qtl-markers')
-project(':bio-postprocess-lis-populate-genotypingrecord-markers').projectDir      = new File(settingsDir, 'lis-populate-genotypingrecord-markers')
 project(':bio-postprocess-lis-create-genefamilytally').projectDir                 = new File(settingsDir, 'lis-create-genefamilytally')
 project(':bio-postprocess-lis-create-pathways').projectDir                        = new File(settingsDir, 'lis-create-pathways')
 project(':bio-postprocess-lis-populate-pangeneset-genes-proteins').projectDir     = new File(settingsDir, 'lis-populate-pangeneset-genes-proteins')
