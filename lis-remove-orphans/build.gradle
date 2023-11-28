@@ -1,0 +1,30 @@
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java']
+        }
+        resources {
+            srcDirs = ['src/main/resources']
+        }
+    }
+    test {
+        java {
+            srcDirs = ['src/test/java']
+        }
+        resources {
+            srcDirs = ['src/test/resources']
+        }
+    }
+}
+
+dependencies {
+    implementation group: 'org.intermine', name: 'bio-model', version: bioVersion //to read genomic_keyDefs.properties
+    implementation group: 'org.intermine', name: 'intermine-integrate', version: imVersion
+    implementation group: 'org.intermine', name: 'intermine-pathquery', version: imVersion
+    bioModel group: 'org.intermine', name: 'bio-model', version: bioVersion, transitive: false
+    implementation group: 'org.intermine', name: 'bio-source-lis-qtl', version: bioVersion
+}
+
+processResources {
+    from('.') { include ("*.properties")}
+}

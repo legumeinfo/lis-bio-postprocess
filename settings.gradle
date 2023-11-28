@@ -7,7 +7,8 @@ include ':bio-postprocess-lis-populate-gwasresult-markers',
     ':bio-postprocess-lis-create-genefamilytally',
     ':bio-postprocess-lis-create-pathways',
     ':bio-postprocess-lis-populate-pangeneset-genes-proteins',
-    ':bio-postprocess-lis-populate-protein-transcript-attributes'
+    ':bio-postprocess-lis-populate-protein-transcript-attributes',
+    ':bio-postprocess-lis-remove-orphans'
 
 project(':bio-postprocess-lis-populate-gwasresult-markers').projectDir            = new File(settingsDir, 'lis-populate-gwasresult-markers')
 project(':bio-postprocess-lis-populate-marker-linkagegrouppositions').projectDir  = new File(settingsDir, 'lis-populate-marker-linkagegrouppositions')
@@ -17,3 +18,4 @@ project(':bio-postprocess-lis-create-genefamilytally').projectDir               
 project(':bio-postprocess-lis-create-pathways').projectDir                        = new File(settingsDir, 'lis-create-pathways')
 project(':bio-postprocess-lis-populate-pangeneset-genes-proteins').projectDir     = new File(settingsDir, 'lis-populate-pangeneset-genes-proteins')
 project(':bio-postprocess-lis-populate-protein-transcript-attributes').projectDir = new File(settingsDir, 'lis-populate-protein-transcript-attributes')
+project(':bio-postprocess-lis-remove-orphans').projectDir                         = new File(settingsDir, 'lis-remove-orphans')
