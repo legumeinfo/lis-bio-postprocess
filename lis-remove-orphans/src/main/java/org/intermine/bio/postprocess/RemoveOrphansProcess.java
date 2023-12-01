@@ -41,7 +41,11 @@ import org.intermine.model.bio.Transcript;
 import org.apache.log4j.Logger;
 
 /**
- * Remove orphaned objects.
+ * Remove orphaned objects:
+ *
+ *   - Gene with empty proteins collection
+ *   - Protein with empty genes collection OR null transcript reference
+ *   - Transcript with null protein reference or null chromosome/supercontig reference
  *
  * @author Sam Hokin
  */
@@ -60,8 +64,9 @@ public class RemoveOrphansProcess extends PostProcessor {
      * {@inheritDoc}
      */
     public void postProcess() throws ObjectStoreException {
-        // find Gene objects with empty proteins collection
+
         Set<Gene> orphanGenes = new HashSet<>();
+        // find Gene objects with empty proteins collection
         Query qGene = new Query();
         QueryClass qcGene = new QueryClass(Gene.class);
         qGene.addFrom(qcGene);
@@ -74,8 +79,8 @@ public class RemoveOrphansProcess extends PostProcessor {
             orphanGenes.add(gene);
         }
 
-        // find Protein objects with empty genes collection OR no transcript reference
         Set<Protein> orphanProteins = new HashSet<>();
+        // find Protein objects with empty genes collection OR no transcript reference
         Query qProtein = new Query();
         QueryClass qcProtein = new QueryClass(Protein.class);
         qProtein.addFrom(qcProtein);
@@ -91,15 +96,30 @@ public class RemoveOrphansProcess extends PostProcessor {
             orphanProteins.add(protein);
         }
 
-        // find orphan Transcript objects
         Set<Transcript> orphanTranscripts = new HashSet<>();
-        Query qTranscript = new Query();
-        QueryClass qcTranscript = new QueryClass(Transcript.class);
-        qTranscript.addFrom(qcTranscript);
-        qTranscript.addToSelect(qcTranscript);
-        qTranscript.setConstraint(new ContainsConstraint(new QueryObjectReference(qcTranscript, "protein"), ConstraintOp.IS_NULL));
-        Results transcriptResults = osw.getObjectStore().execute(qTranscript);
-        for (Object obj : transcriptResults.asList()) {
+        // Transcript 1. find Transcript objects with no protein reference
+        Query qTranscript1 = new Query();
+        QueryClass qcTranscript1 = new QueryClass(Transcript.class);
+        qTranscript1.addFrom(qcTranscript1);
+        qTranscript1.addToSelect(qcTranscript1);
+        qTranscript1.setConstraint(new ContainsConstraint(new QueryObjectReference(qcTranscript1, "protein"), ConstraintOp.IS_NULL));
+        Results transcriptResults1 = osw.getObjectStore().execute(qTranscript1);
+        for (Object obj : transcriptResults1.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            Transcript transcript = (Transcript) row.get(0);
+            orphanTranscripts.add(transcript);
+        }
+        // Transcript 2. find Transcript objects with no chromosome reference AND no supercontig reference
+        Query qTranscript2 = new Query();
+        QueryClass qcTranscript2 = new QueryClass(Transcript.class);
+        qTranscript2.addFrom(qcTranscript2);
+        qTranscript2.addToSelect(qcTranscript2);
+        ConstraintSet transcriptConstraints2 = new ConstraintSet(ConstraintOp.AND);
+        transcriptConstraints2.addConstraint(new ContainsConstraint(new QueryObjectReference(qcTranscript2, "chromosome"), ConstraintOp.IS_NULL));
+        transcriptConstraints2.addConstraint(new ContainsConstraint(new QueryObjectReference(qcTranscript2, "supercontig"), ConstraintOp.IS_NULL));
+        qTranscript2.setConstraint(transcriptConstraints2);
+        Results transcriptResults2 = osw.getObjectStore().execute(qTranscript2);
+        for (Object obj : transcriptResults2.asList()) {
             ResultsRow row = (ResultsRow) obj;
             Transcript transcript = (Transcript) row.get(0);
             orphanTranscripts.add(transcript);
@@ -127,6 +147,6 @@ public class RemoveOrphansProcess extends PostProcessor {
             osw.delete(transcript);
         }
         osw.commitTransaction();
-        LOG.info("Removed " + orphanTranscripts.size() + " Transcript objects with no protein reference.");
+        LOG.info("Removed " + orphanTranscripts.size() + " Transcript objects with no protein reference or which lack both chromosome and supercontig reference.");
     }
 }
