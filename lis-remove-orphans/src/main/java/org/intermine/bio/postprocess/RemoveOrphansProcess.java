@@ -41,7 +41,11 @@ import org.intermine.model.bio.Transcript;
 import org.apache.log4j.Logger;
 
 /**
- * Remove orphaned objects.
+ * Remove orphaned objects:
+ *   - SequenceFeature with null chromosome and supercontig references
+ *   - Gene with empty proteins collection
+ *   - Protein with empty genes collection OR null transcript reference
+ *   - Transcript with null protein reference
  *
  * @author Sam Hokin
  */
@@ -60,6 +64,24 @@ public class RemoveOrphansProcess extends PostProcessor {
      * {@inheritDoc}
      */
     public void postProcess() throws ObjectStoreException {
+
+        // find SequenceFeature objects with null chromosome AND supercontig references
+        Set<SequenceFeature> orphanSequenceFeatures = new HashSet<>();
+        Query qSequenceFeature = new Query();
+        QueryClass qcSequenceFeature = new QueryClass(SequenceFeature.class);
+        qSequenceFeature.addFrom(qcSequenceFeature);
+        qSequenceFeature.addToSelect(qcSequenceFeature);
+        ConstraintSet sequenceFeatureConstraints = new ConstraintSet(ConstraintOp.AND);
+        sequenceFeatureConstraints.addConstraint(new ContainsConstraint(new QueryObjectReference(qcSequenceFeature, "chromosome"), ConstraintOp.IS_NULL));
+        sequenceFeatureConstraints.addConstraint(new ContainsConstraint(new QueryObjectReference(qcSequenceFeature, "supercontig"), ConstraintOp.IS_NULL));
+        qSequenceFeature.setConstraint(sequenceFeatureConstraints);
+        Results sequenceFeatureResults = osw.getObjectStore().execute(qSequenceFeature);
+        for (Object obj : sequenceFeatureResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            SequenceFeature sequenceFeature = (SequenceFeature) row.get(0);
+            orphanSequenceFeatures.add(sequenceFeature);
+        }
+
         // find Gene objects with empty proteins collection
         Set<Gene> orphanGenes = new HashSet<>();
         Query qGene = new Query();
@@ -91,7 +113,7 @@ public class RemoveOrphansProcess extends PostProcessor {
             orphanProteins.add(protein);
         }
 
-        // find orphan Transcript objects
+        // find Transcript objects with no protein reference
         Set<Transcript> orphanTranscripts = new HashSet<>();
         Query qTranscript = new Query();
         QueryClass qcTranscript = new QueryClass(Transcript.class);
@@ -105,6 +127,14 @@ public class RemoveOrphansProcess extends PostProcessor {
             orphanTranscripts.add(transcript);
         }
 
+        // remove orphaned sequence features
+        osw.beginTransaction();
+        for (SequenceFeature sequenceFeature : orphanSequenceFeatures) {
+            osw.delete(sequenceFeature);
+        }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanSequenceFeatures.size() + " SequenceFeature objects with no chromosome or supercontig reference.");
+        
         // remove orphaned genes
         osw.beginTransaction();
         for (Gene gene : orphanGenes) {
