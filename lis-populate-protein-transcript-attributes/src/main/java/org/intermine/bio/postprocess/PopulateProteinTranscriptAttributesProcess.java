@@ -32,7 +32,6 @@ import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
 
 import org.intermine.model.bio.Gene;
-import org.intermine.model.bio.PanGeneSet;
 import org.intermine.model.bio.Protein;
 import org.intermine.model.bio.Transcript;
 

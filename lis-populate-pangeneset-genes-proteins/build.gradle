@@ -18,11 +18,11 @@ sourceSets {
 }
 
 dependencies {
-    implementation group: 'org.intermine', name: 'bio-model', version: bioVersion //to read genomic_keyDefs.properties
+    implementation group: 'org.intermine', name: 'bio-model', version: bioVersion, transitive: false
     implementation group: 'org.intermine', name: 'intermine-integrate', version: imVersion
     implementation group: 'org.intermine', name: 'intermine-pathquery', version: imVersion
     bioModel group: 'org.intermine', name: 'bio-model', version: bioVersion, transitive: false
-    implementation group: 'org.intermine', name: 'bio-source-lis-qtl', version: bioVersion
+    implementation group: 'org.intermine', name: 'bio-source-lis-pangene', version: bioVersion
 }
 
 processResources {
