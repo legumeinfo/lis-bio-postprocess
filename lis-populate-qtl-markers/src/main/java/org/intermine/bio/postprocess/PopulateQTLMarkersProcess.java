@@ -38,7 +38,7 @@ import org.intermine.model.bio.GeneticMarker;
 import org.apache.log4j.Logger;
 
 /**
- * Populate QTL.markers collections by matching GeneticMarker.name or GeneticMarker.alias to markerName.
+ * Populate QTL.markers collections by matching GeneticMarker.name or GeneticMarker.alias to QTL.markerName.
  *
  * @author Sam Hokin
  */
@@ -47,8 +47,6 @@ public class PopulateQTLMarkersProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulateQTLMarkersProcess.class);
 
     /**
-     * Populate a new instance of PopulateQTLMarkersProcess
-     *
      * @param osw object store writer
      */
     public PopulateQTLMarkersProcess(ObjectStoreWriter osw) {
@@ -59,24 +57,26 @@ public class PopulateQTLMarkersProcess extends PostProcessor {
      * {@inheritDoc}
      */
     public void postProcess() throws ObjectStoreException, IllegalAccessException {
-        // query QTLs that have marker names
-        Set<QTL> qtls = new HashSet<>();
+        // QTLs
         Query qQTL = new Query();
         QueryClass qcQTL = new QueryClass(QTL.class);
         qQTL.addFrom(qcQTL);
         qQTL.addToSelect(qcQTL);
+        // QTL.markerNames is not null
+        qQTL.setConstraint(new SimpleConstraint(new QueryField(qcQTL, "markerNames"), ConstraintOp.IS_NOT_NULL));
+
+        // Store resulting QTLs in a Set
+        Set<QTL> qtls = new HashSet<>();
         Results qtlResults = osw.getObjectStore().execute(qQTL);
         for (Object obj : qtlResults.asList()) {
             ResultsRow row = (ResultsRow) obj;
             QTL qtl = (QTL) row.get(0);
-            if (qtl.getMarkerNames() != null) {
-                qtls.add(qtl);
-            }
+            qtls.add(qtl);
         }
-        LOG.info("Found " + qtls.size()+" QTL objects with marker names.");
+        LOG.info("Found " + qtls.size()+" QTL objects with non-null markerNames attribute.");
 
-        // collect lists of marker names from the string marker1|marker2|marker3|...
-        // also store total set of names for query below
+        // populate Lists of marker names from the QTL.markerNames string: marker1|marker2|marker3|...
+        // also store total set of distinct names for query below
         Map<QTL,List<String>> qtlMarkerNames = new HashMap<>();
         Set<String> markerNames = new HashSet<>();
         for (QTL qtl : qtls) {
@@ -108,7 +108,7 @@ public class PopulateQTLMarkersProcess extends PostProcessor {
                 markerNameGeneticMarkers.put(markerName, markers);
             }
         }
-        LOG.info("Found " + markerNameGeneticMarkers.size() + " marker names with at least one matching GeneticMarker.");
+        LOG.info("Found " + markerNameGeneticMarkers.size() + " QTL marker names with at least one matching GeneticMarker.");
 
         // store the markers collections for QTLs
         int count = 0;
