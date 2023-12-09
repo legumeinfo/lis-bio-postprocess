@@ -4,7 +4,6 @@ import java.util.Map;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.HashSet;
-import java.util.concurrent.ConcurrentSkipListSet;
 
 import org.intermine.bio.util.PostProcessUtil;
 import org.intermine.postprocess.PostProcessor;
@@ -45,7 +44,6 @@ public class PopulateQTLGenesProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulateQTLGenesProcess.class);
 
     /**
-     * Construct with an ObjectStoreWriter, read and write from the same ObjectStore
      * @param osw object store writer
      */
     public PopulateQTLGenesProcess(ObjectStoreWriter osw) {
@@ -61,21 +59,21 @@ public class PopulateQTLGenesProcess extends PostProcessor {
         // First section - accumulate the QTLs and their genomic spans, from their associated markers
         // ----------------------------------------------------------------------------------------------
 
-        LOG.info("Querying QTLs...");
-	// store each QTL's markers in a Set in a Map keyed by QTL
-	Map<QTL,Set<GeneticMarker>> qtlMarkersMap = new HashMap<>();
+        // query all QTLs
         Query qQTL = new Query();
         QueryClass qcQTL = new QueryClass(QTL.class);
         qQTL.addToSelect(qcQTL);
         qQTL.addFrom(qcQTL);
-        // execute the query
+
+        // load a Set of GeneticMarkers into a Map keyed by QTL
+	Map<QTL,Set<GeneticMarker>> qtlMarkersMap = new HashMap<>();
+        int count = 0;
         Results qtlResults = osw.getObjectStore().execute(qQTL);
         for (Object obj : qtlResults.asList()) {
             ResultsRow row = (ResultsRow) obj;
 	    QTL qtl = (QTL) row.get(0);
             for (GeneticMarker marker : qtl.getMarkers()) {
-                Location location = marker.getChromosomeLocation();
-                if (location == null) continue; // unlocated marker
+                if (marker.getChromosomeLocation() == null) continue; // marker not mapped to a chromosome
                 if (qtlMarkersMap.containsKey(qtl)) {
                     qtlMarkersMap.get(qtl).add(marker);
                 } else {
@@ -84,87 +82,96 @@ public class PopulateQTLGenesProcess extends PostProcessor {
                     qtlMarkersMap.put(qtl, markers);
                 }
             }
+            count++;
 	}
-        LOG.info("Found " + qtlMarkersMap.size() + " QTL objects.");
+        LOG.info("Found " + count + " genetic markers associated with " + qtlMarkersMap.size() + " QTLs.");
         
-	LOG.info("Spinning through QTLs, finding their genomic spans...");
-        /////////////////////////////////////////////////////////////////////////////////////////////////
 	// run through the QTLs to get the full genomic range of markers, load those into QTLSpan objects
-	Set<QTLSpan> qtlSpans = new ConcurrentSkipListSet<>();
-        qtlMarkersMap.keySet().parallelStream().forEach(qtl -> {
-                Set<GeneticMarker> markers = qtlMarkersMap.get(qtl);
-                int minStart = Integer.MAX_VALUE;
-                int maxEnd = 0;
-                Chromosome chromosome = null;
-                for (GeneticMarker marker : markers) {
-                    Location location = marker.getChromosomeLocation();
-                    chromosome = (Chromosome) location.getLocatedOn();
-                    int start = location.getStart();
-                    int end = location.getEnd();
-                    if (start < minStart) minStart = start;
-                    if (end > maxEnd) maxEnd = end;
+	Set<QTLSpan> qtlSpans = new HashSet<>();
+        for (QTL qtl : qtlMarkersMap.keySet()) {
+            Set<GeneticMarker> markers = qtlMarkersMap.get(qtl);
+            int minStart = Integer.MAX_VALUE;
+            int maxEnd = 0;
+            String chromosomeIdentifier = null;
+            Set<Chromosome> chromosomes = new HashSet<>(); // for checking single chromosome
+            for (GeneticMarker marker : markers) {
+                Location location = marker.getChromosomeLocation();
+                Chromosome chromosome = (Chromosome) location.getLocatedOn();
+                chromosomeIdentifier = chromosome.getPrimaryIdentifier();
+                chromosomes.add(chromosome);
+                int start = location.getStart();
+                int end = location.getEnd();
+                if (start < minStart) minStart = start;
+                if (end > maxEnd) maxEnd = end;
+            }
+            // check that we're on the same chromosome!
+            if (chromosomes.size() > 1) {
+                LOG.warn("QTL " + qtl.getPrimaryIdentifier() + " has markers on different chromosomes: ");
+                for (GeneticMarker mrk : qtlMarkersMap.get(qtl)) {
+                    LOG.warn(mrk.getPrimaryIdentifier() + "\t" + mrk.getName() + "\t" + mrk.getChromosome().getPrimaryIdentifier());
                 }
-                qtlSpans.add(new QTLSpan(qtl, chromosome.getPrimaryIdentifier(), minStart, maxEnd));
-            });
-        /////////////////////////////////////////////////////////////////////////////////////////////////
-        LOG.info("Found " + qtlSpans.size() + " QTL spans.");
+            } else {
+                qtlSpans.add(new QTLSpan(qtl, chromosomeIdentifier, minStart, maxEnd));
+            }
+        }
+        LOG.info("Found " + qtlSpans.size() + " QTL spans to search for spanned genes.");
 
         // ----------------------------------------------------------------------------------
         // Second section: spin through the QTLs and query genes that fall within the QTLSpan
         // ----------------------------------------------------------------------------------
 
-	LOG.info("Spinning through QTLs, finding the genes within their spans...");
 	// store spanned genes per QTL in a map
 	Map<QTL,Set<Gene>> qtlGeneMap = new HashMap<>();
+        count = 0;
 	for (QTLSpan qtlSpan : qtlSpans) {
+
 	    Query qGene = new Query();
 	    qGene.setDistinct(false);
-	    ConstraintSet csGene = new ConstraintSet(ConstraintOp.AND);
 	    // 0 Gene
 	    QueryClass qcGene = new QueryClass(Gene.class);
 	    qGene.addFrom(qcGene);
 	    qGene.addToSelect(qcGene);
-	    // 1 Gene.chromosome
-	    QueryClass qcGeneChromosome = new QueryClass(Chromosome.class);
-	    qGene.addFrom(qcGeneChromosome);
-	    qGene.addToSelect(qcGeneChromosome);
+	    // Chromosome
+	    QueryClass qcChromosome = new QueryClass(Chromosome.class);
+	    qGene.addFrom(qcChromosome);
+	    // Location
+	    QueryClass qcLocation = new QueryClass(Location.class);
+	    qGene.addFrom(qcLocation);
+
+	    ConstraintSet cs = new ConstraintSet(ConstraintOp.AND);
+            // Gene.chromosome = Chromosome
 	    QueryObjectReference geneChromosome = new QueryObjectReference(qcGene, "chromosome");
-	    csGene.addConstraint(new ContainsConstraint(geneChromosome, ConstraintOp.CONTAINS, qcGeneChromosome));
-	    // 2 Gene.chromosomeLocation
-	    QueryClass qcGeneLocation = new QueryClass(Location.class);
-	    qGene.addFrom(qcGeneLocation);
-	    qGene.addToSelect(qcGeneLocation);
-	    QueryObjectReference geneLocation = new QueryObjectReference(qcGene, "chromosomeLocation");
-	    csGene.addConstraint(new ContainsConstraint(geneLocation, ConstraintOp.CONTAINS, qcGeneLocation));
-	    // require that the gene's chromosome equal that of QTLSpan
-	    QueryValue qtlChromosomeIdValue = new QueryValue(qtlSpan.chromosomeId);
-	    QueryField geneChromosomeIdField = new QueryField(qcGeneChromosome, "primaryIdentifier");
-	    SimpleConstraint sameChromosomeConstraint = new SimpleConstraint(qtlChromosomeIdValue, ConstraintOp.EQUALS, geneChromosomeIdField);
-	    csGene.addConstraint(sameChromosomeConstraint);
-	    // require that the gene's location.end >= QTLSpan.start
-	    QueryField geneLocationEndField = new QueryField(qcGeneLocation, "end");
-	    QueryValue qtlSpanStartValue = new QueryValue(qtlSpan.start);
-	    SimpleConstraint pastStartConstraint = new SimpleConstraint(geneLocationEndField, ConstraintOp.GREATER_THAN_EQUALS, qtlSpanStartValue);
-	    csGene.addConstraint(pastStartConstraint);
-	    // require that the gene's location.start <= QTLSpan.end
-	    QueryField geneLocationStartField = new QueryField(qcGeneLocation, "start");
-	    QueryValue qtlSpanEndValue = new QueryValue(qtlSpan.end);
-	    SimpleConstraint beforeEndConstraint = new SimpleConstraint(geneLocationStartField, ConstraintOp.LESS_THAN_EQUALS, qtlSpanEndValue);
-	    csGene.addConstraint(beforeEndConstraint);
+	    cs.addConstraint(new ContainsConstraint(geneChromosome, ConstraintOp.CONTAINS, qcChromosome));
+            // Gene.location = Location
+	    QueryObjectReference geneChromosomeLocation = new QueryObjectReference(qcGene, "chromosomeLocation");
+	    cs.addConstraint(new ContainsConstraint(geneChromosomeLocation, ConstraintOp.CONTAINS, qcLocation));
+	    // QTLSpan.chromosome = Chromosome
+	    QueryField chromosomePrimaryIdentifier = new QueryField(qcChromosome, "primaryIdentifier");
+	    QueryValue qtlSpanChromosomeId = new QueryValue(qtlSpan.chromosomeId);
+            cs.addConstraint(new SimpleConstraint(chromosomePrimaryIdentifier, ConstraintOp.EQUALS, qtlSpanChromosomeId));
+	    // Location.end >= QTLSpan.start
+	    QueryField locationEnd = new QueryField(qcLocation, "end");
+	    QueryValue qtlSpanStart = new QueryValue(qtlSpan.start);
+            cs.addConstraint(new SimpleConstraint(locationEnd, ConstraintOp.GREATER_THAN_EQUALS, qtlSpanStart));
+	    // Location.start <= QTLSpan.end
+	    QueryField locationStart = new QueryField(qcLocation, "start");
+	    QueryValue qtlSpanEnd = new QueryValue(qtlSpan.end);
+            cs.addConstraint(new SimpleConstraint(locationStart, ConstraintOp.LESS_THAN_EQUALS, qtlSpanEnd));
 	    // set the overall constraint
-	    qGene.setConstraint(csGene);
+	    qGene.setConstraint(cs);
+
 	    // store this QTL's spanned genes in a Set
 	    Set<Gene> genes = new HashSet<>();
-	    // execute the query
             Results geneResults = osw.getObjectStore().execute(qGene);
             for (Object obj : geneResults.asList()) {
 		ResultsRow row = (ResultsRow) obj;
 		Gene gene = (Gene) row.get(0);
 		genes.add(gene);
+                count++;
 	    }
 	    qtlGeneMap.put(qtlSpan.qtl, genes);
 	}
-        LOG.info("Found associated genes for " + qtlGeneMap.size() + " QTLs.");
+        LOG.info("Found " + count + " genes spanned by " + qtlGeneMap.size() + " QTLs.");
 
 	// store the QTL.genes collections
 	osw.beginTransaction();
@@ -175,6 +182,7 @@ public class PopulateQTLGenesProcess extends PostProcessor {
             osw.store(clone);
 	}
         osw.commitTransaction();
+        LOG.info("Stored genes collections for " + qtlGeneMap.size() + " QTLs.");
     }
 
     /**
