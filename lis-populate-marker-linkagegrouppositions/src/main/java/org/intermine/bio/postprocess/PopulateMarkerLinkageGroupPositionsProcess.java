@@ -31,13 +31,14 @@ import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
 import org.intermine.objectstore.query.SimpleConstraint;
 
-import org.intermine.model.bio.LinkageGroupPosition;
 import org.intermine.model.bio.GeneticMarker;
+import org.intermine.model.bio.LinkageGroupPosition;
 
 import org.apache.log4j.Logger;
 
 /**
- * Populate GeneticMarker.linkageGroupPositions by matching GeneticMarker.name to markerName.
+ * Populate GeneticMarker.linkageGroupPositions by matching GeneticMarker.name to LinkageGroupPosition.markerName.
+ * Note that a given genetic marker may have many distinct linkage group positions (from various experiments).
  *
  * @author Sam Hokin
  */
@@ -46,8 +47,6 @@ public class PopulateMarkerLinkageGroupPositionsProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulateMarkerLinkageGroupPositionsProcess.class);
 
     /**
-     * Populate a new instance of PoplulateMarkerLinkageGroupPositionsProcess
-     *
      * @param osw object store writer
      */
     public PopulateMarkerLinkageGroupPositionsProcess(ObjectStoreWriter osw) {
@@ -59,14 +58,15 @@ public class PopulateMarkerLinkageGroupPositionsProcess extends PostProcessor {
      */
     public void postProcess() throws ObjectStoreException {
         Query q = new Query();
-        // 0
+        // 0 GeneticMarker
         QueryClass qcMarker = new QueryClass(GeneticMarker.class);
         q.addFrom(qcMarker);
         q.addToSelect(qcMarker);
-        // 1 
+        // 1 LinkageGroupPosition
         QueryClass qcLGP = new QueryClass(LinkageGroupPosition.class);
         q.addFrom(qcLGP);
         q.addToSelect(qcLGP);
+
 	// GeneticMarker.name = LinkageGroupPosition.markerName
 	QueryField geneticMarkerName = new QueryField(qcMarker, "name");
         QueryField lgpMarkerName = new QueryField(qcLGP, "markerName");
@@ -75,9 +75,10 @@ public class PopulateMarkerLinkageGroupPositionsProcess extends PostProcessor {
 
         // execute the query
         Results results = osw.getObjectStore().execute(q);
-        // store LinkageGroupPositions in a map keyed by GeneticMarker.id
+        // store a Set of LinkageGroupPositions in a Map keyed by GeneticMarker.id
         Map<Integer,GeneticMarker> markers = new HashMap<>();
         Map<Integer,Set<LinkageGroupPosition>> markerLGPs = new HashMap<>();
+        int count = 0;
 	for (Object resultObject : results.asList()) {
 	    ResultsRow row = (ResultsRow) resultObject;
             GeneticMarker marker = (GeneticMarker) row.get(0);
@@ -91,7 +92,10 @@ public class PopulateMarkerLinkageGroupPositionsProcess extends PostProcessor {
                 lgps.add(lgp);
                 markerLGPs.put(id, lgps);
             }
+            count++;
 	}
+        LOG.info("Found " + count + " LinkageGroupPosition objects which map to " + markers.size() + " GeneticMarker objects.");
+
         // store updated GeneticMarker objects with the associated LinkageGroupPositions
 	osw.beginTransaction();
         try {
@@ -104,6 +108,6 @@ public class PopulateMarkerLinkageGroupPositionsProcess extends PostProcessor {
             throw new ObjectStoreException(e);
         }
         osw.commitTransaction();
-        osw.close();
+        LOG.info("Stored " + markers.size() + " GeneticMarker.linkageGroupPositions collections.");
     }
 }
