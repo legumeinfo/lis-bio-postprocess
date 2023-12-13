@@ -26,6 +26,7 @@ import org.intermine.objectstore.query.ConstraintSet;
 import org.intermine.objectstore.query.ContainsConstraint;
 import org.intermine.objectstore.query.Query;
 import org.intermine.objectstore.query.QueryClass;
+import org.intermine.objectstore.query.QueryCollectionReference;
 import org.intermine.objectstore.query.QueryExpression;
 import org.intermine.objectstore.query.QueryField;
 import org.intermine.objectstore.query.QueryObjectReference;
@@ -34,14 +35,15 @@ import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
 import org.intermine.objectstore.query.SimpleConstraint;
 
+import org.intermine.model.bio.GeneticMarker;
+import org.intermine.model.bio.GenotypingPlatform;
 import org.intermine.model.bio.GWAS;
 import org.intermine.model.bio.GWASResult;
-import org.intermine.model.bio.GeneticMarker;
 
 import org.apache.log4j.Logger;
 
 /**
- * Populate GWASResult.markers collections by matching GeneticMarker.name to markerName.
+ * Populate GWASResult.markers collections by matching GeneticMarker.name to GWASResult.markerName.
  *
  * @author Sam Hokin
  */
@@ -50,8 +52,6 @@ public class PopulateGWASResultMarkersProcess extends PostProcessor {
     private static final Logger LOG = Logger.getLogger(PopulateGWASResultMarkersProcess.class);
 
     /**
-     * Populate a new instance of PopulateGWASResultMarkersProcess
-     *
      * @param osw object store writer
      */
     public PopulateGWASResultMarkersProcess(ObjectStoreWriter osw) {
@@ -63,65 +63,44 @@ public class PopulateGWASResultMarkersProcess extends PostProcessor {
      */
     public void postProcess() throws ObjectStoreException {
         Query q = new Query();
-	// 0
+	// 0 GWASResult
         QueryClass qcGWASResult = new QueryClass(GWASResult.class);
         q.addFrom(qcGWASResult);
         q.addToSelect(qcGWASResult);
-	// 1
+	// 1 GeneticMarker
         QueryClass qcMarker = new QueryClass(GeneticMarker.class);
         q.addFrom(qcMarker);
         q.addToSelect(qcMarker);
-        // 2
+        // GWAS
         QueryClass qcGWAS = new QueryClass(GWAS.class);
         q.addFrom(qcGWAS);
+        // GenotypingPlatform
+        QueryClass qcGenotypingPlatform = new QueryClass(GenotypingPlatform.class);
+        q.addFrom(qcGenotypingPlatform);
+        
         // constraints
         ConstraintSet constraints = new ConstraintSet(ConstraintOp.AND);
         // GWASResult.gwas = GWAS
         QueryObjectReference gwasResultGWAS = new QueryObjectReference(qcGWASResult, "gwas");
         constraints.addConstraint(new ContainsConstraint(gwasResultGWAS, ConstraintOp.CONTAINS, qcGWAS));
+        // GWAS.genotypingPlatform equals GenotypingPlatform
+        QueryObjectReference gwasGenotypingPlatform = new QueryObjectReference(qcGWAS, "genotypingPlatform");
+	constraints.addConstraint(new ContainsConstraint(gwasGenotypingPlatform, ConstraintOp.CONTAINS, qcGenotypingPlatform));
+        // GeneticMarker.genotypingPlatforms contains GenotypingPlatform
+        QueryCollectionReference markerGenotypingPlatforms = new QueryCollectionReference(qcMarker, "genotypingPlatforms");
+        constraints.addConstraint(new ContainsConstraint(markerGenotypingPlatforms, ConstraintOp.CONTAINS, qcGenotypingPlatform));
 	// GWASResult.markerName = GeneticMarker.name
 	QueryField gwasResultMarkerName = new QueryField(qcGWASResult, "markerName");
 	QueryField markerName = new QueryField(qcMarker, "name");
 	constraints.addConstraint(new SimpleConstraint(gwasResultMarkerName, ConstraintOp.EQUALS, markerName));
-        // GWAS.genotypingPlatform = GeneticMarker.genotypingPlatform
-        QueryField gwasGenotypingPlatform = new QueryField(qcGWAS, "genotypingPlatform");
-        QueryField markerGenotypingPlatform = new QueryField(qcMarker, "genotypingPlatform");
-	constraints.addConstraint(new SimpleConstraint(markerGenotypingPlatform, ConstraintOp.EQUALS, gwasGenotypingPlatform));
         q.setConstraint(constraints);
 
-
-	    // Query qGene = new Query();
-	    // qGene.setDistinct(false);
-	    // ConstraintSet csGene = new ConstraintSet(ConstraintOp.AND);
-	    // // 0 Gene
-	    // QueryClass qcGene = new QueryClass(Gene.class);
-	    // qGene.addFrom(qcGene);
-	    // qGene.addToSelect(qcGene);
-	    // // 1 Gene.chromosome
-	    // QueryClass qcGeneChromosome = new QueryClass(Chromosome.class);
-	    // qGene.addFrom(qcGeneChromosome);
-	    // qGene.addToSelect(qcGeneChromosome);
-	    // QueryObjectReference geneChromosome = new QueryObjectReference(qcGene, "chromosome");
-	    // csGene.addConstraint(new ContainsConstraint(geneChromosome, ConstraintOp.CONTAINS, qcGeneChromosome));
-	    // // 2 Gene.chromosomeLocation
-	    // QueryClass qcGeneLocation = new QueryClass(Location.class);
-	    // qGene.addFrom(qcGeneLocation);
-	    // qGene.addToSelect(qcGeneLocation);
-	    // QueryObjectReference geneLocation = new QueryObjectReference(qcGene, "chromosomeLocation");
-	    // csGene.addConstraint(new ContainsConstraint(geneLocation, ConstraintOp.CONTAINS, qcGeneLocation));
-	    // // require that the gene's chromosome equal that of QTLSpan
-	    // QueryValue qtlChromosomeIdValue = new QueryValue(qtlSpan.chromosomeId);
-	    // QueryField geneChromosomeIdField = new QueryField(qcGeneChromosome, "primaryIdentifier");
-	    // SimpleConstraint sameChromosomeConstraint = new SimpleConstraint(qtlChromosomeIdValue, ConstraintOp.EQUALS, geneChromosomeIdField);
-	    // csGene.addConstraint(sameChromosomeConstraint);
-
-
-
-        // execute the query
-        Results results = osw.getObjectStore().execute(q);
-        // store GeneticMarkers in a map keyed by GWASResult.id
+        // store Sets of GeneticMarkers in a map keyed by GWASResult.id
+        // also store GWASResults
         Map<Integer,GWASResult> gwasResults = new HashMap<>();
         Map<Integer,Set<GeneticMarker>> gwasResultMarkers = new HashMap<>();
+        int count = 0;
+        Results results = osw.getObjectStore().execute(q);
 	for (Object resultObject : results.asList()) {
 	    ResultsRow row = (ResultsRow) resultObject;
             GWASResult gwasResult = (GWASResult) row.get(0);
@@ -135,7 +114,10 @@ public class PopulateGWASResultMarkersProcess extends PostProcessor {
                 markers.add(marker);
                 gwasResultMarkers.put(id, markers);
             }
+            count++;
 	}
+        LOG.info("Found " + count + " GeneticMarker objects that map to " + gwasResults.size() + " GWASResult objects.");
+
         // store updated GWASResult objects with the associated markers
 	osw.beginTransaction();
         try {
@@ -148,6 +130,6 @@ public class PopulateGWASResultMarkersProcess extends PostProcessor {
             throw new ObjectStoreException(e);
         }
         osw.commitTransaction();
-        osw.close();
+        LOG.info("Stored markers collections for " + gwasResults.size() + " GWASResult objects.");
     }
 }
