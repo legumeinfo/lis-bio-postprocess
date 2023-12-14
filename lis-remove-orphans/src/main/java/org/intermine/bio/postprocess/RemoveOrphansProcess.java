@@ -24,18 +24,22 @@ import org.intermine.metadata.ConstraintOp;
 import org.intermine.objectstore.ObjectStore;
 import org.intermine.objectstore.ObjectStoreException;
 import org.intermine.objectstore.ObjectStoreWriter;
+import org.intermine.objectstore.query.Constraint;
 import org.intermine.objectstore.query.ConstraintSet;
 import org.intermine.objectstore.query.ContainsConstraint;
 import org.intermine.objectstore.query.MultipleInBagConstraint;
 import org.intermine.objectstore.query.Query;
 import org.intermine.objectstore.query.QueryClass;
+import org.intermine.objectstore.query.QueryField;
+import org.intermine.objectstore.query.QueryValue;
 import org.intermine.objectstore.query.QueryCollectionReference;
 import org.intermine.objectstore.query.QueryObjectReference;
 import org.intermine.objectstore.query.Results;
 import org.intermine.objectstore.query.ResultsRow;
-import org.intermine.objectstore.query.Constraint;
-import org.intermine.model.bio.CDS;
+import org.intermine.objectstore.query.SimpleConstraint;
+import org.intermine.model.bio.Annotatable;
 import org.intermine.model.bio.Gene;
+import org.intermine.model.bio.OntologyAnnotation;
 import org.intermine.model.bio.OntologyTerm;
 import org.intermine.model.bio.Protein;
 import org.intermine.model.bio.Transcript;
@@ -45,10 +49,10 @@ import org.apache.log4j.Logger;
 /**
  * Remove orphaned objects:
  *
- *   - CDS with null chromosome/supercontig reference
  *   - Gene with empty proteins collection
  *   - Protein with empty genes collection OR null transcript reference
  *   - Transcript with null protein reference or null chromosome/supercontig reference
+ *   - OntologyAnnotation with ontologyTerm reference to a term with null ontology reference
  *   - OntologyTerm with null ontology reference
  *
  * @author Sam Hokin
@@ -69,25 +73,8 @@ public class RemoveOrphansProcess extends PostProcessor {
      */
     public void postProcess() throws ObjectStoreException {
 
-        Set<CDS> orphanCDSes = new HashSet<>();
-        // find CDS objects with no chromosome reference AND no supercontig reference
-        Query qCDS = new Query();
-        QueryClass qcCDS = new QueryClass(CDS.class);
-        qCDS.addFrom(qcCDS);
-        qCDS.addToSelect(qcCDS);
-        ConstraintSet cdsConstraints2 = new ConstraintSet(ConstraintOp.AND);
-        cdsConstraints2.addConstraint(new ContainsConstraint(new QueryObjectReference(qcCDS, "chromosome"), ConstraintOp.IS_NULL));
-        cdsConstraints2.addConstraint(new ContainsConstraint(new QueryObjectReference(qcCDS, "supercontig"), ConstraintOp.IS_NULL));
-        qCDS.setConstraint(cdsConstraints2);
-        Results cdsResults2 = osw.getObjectStore().execute(qCDS);
-        for (Object obj : cdsResults2.asList()) {
-            ResultsRow row = (ResultsRow) obj;
-            CDS cds = (CDS) row.get(0);
-            orphanCDSes.add(cds);
-        }
-
-        Set<Gene> orphanGenes = new HashSet<>();
         // find Gene objects with empty proteins collection
+        Set<Gene> orphanGenes = new HashSet<>();
         Query qGene = new Query();
         QueryClass qcGene = new QueryClass(Gene.class);
         qGene.addFrom(qcGene);
@@ -99,23 +86,16 @@ public class RemoveOrphansProcess extends PostProcessor {
             Gene gene = (Gene) row.get(0);
             orphanGenes.add(gene);
         }
-
-        Set<OntologyTerm> orphanOntologyTerms = new HashSet<>();
-        // find OntologyTerm objects with no ontology reference
-        Query qOntologyTerm = new Query();
-        QueryClass qcOntologyTerm = new QueryClass(OntologyTerm.class);
-        qOntologyTerm.addFrom(qcOntologyTerm);
-        qOntologyTerm.addToSelect(qcOntologyTerm);
-        qOntologyTerm.setConstraint(new ContainsConstraint(new QueryObjectReference(qcOntologyTerm, "ontology"), ConstraintOp.IS_NULL));
-        Results ontologyTermResults = osw.getObjectStore().execute(qOntologyTerm);
-        for (Object obj : ontologyTermResults.asList()) {
-            ResultsRow row = (ResultsRow) obj;
-            OntologyTerm ontologyTerm = (OntologyTerm) row.get(0);
-            orphanOntologyTerms.add(ontologyTerm);
+        // remove orphaned genes
+        osw.beginTransaction();
+        for (Gene gene : orphanGenes) {
+            osw.delete(gene);
         }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanGenes.size() + " Gene objects with empty proteins collection.");
 
-        Set<Protein> orphanProteins = new HashSet<>();
         // find Protein objects with empty genes collection OR no transcript reference
+        Set<Protein> orphanProteins = new HashSet<>();
         Query qProtein = new Query();
         QueryClass qcProtein = new QueryClass(Protein.class);
         qProtein.addFrom(qcProtein);
@@ -130,9 +110,16 @@ public class RemoveOrphansProcess extends PostProcessor {
             Protein protein = (Protein) row.get(0);
             orphanProteins.add(protein);
         }
+        // remove orphaned proteins
+        osw.beginTransaction();
+        for (Protein protein : orphanProteins) {
+            osw.delete(protein);
+        }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanProteins.size() + " Protein objects with empty genes collection OR no transcript reference.");
 
-        Set<Transcript> orphanTranscripts = new HashSet<>();
         // Transcript 1. find Transcript objects with no protein reference
+        Set<Transcript> orphanTranscripts = new HashSet<>();
         Query qTranscript1 = new Query();
         QueryClass qcTranscript1 = new QueryClass(Transcript.class);
         qTranscript1.addFrom(qcTranscript1);
@@ -159,39 +146,6 @@ public class RemoveOrphansProcess extends PostProcessor {
             Transcript transcript = (Transcript) row.get(0);
             orphanTranscripts.add(transcript);
         }
-
-        // remove orphaned CDSes
-        osw.beginTransaction();
-        for (CDS cds : orphanCDSes) {
-            osw.delete(cds);
-        }
-        osw.commitTransaction();
-        LOG.info("Removed " + orphanCDSes.size() + " CDS objects which lack both chromosome and supercontig reference.");
-
-        // remove orphaned genes
-        osw.beginTransaction();
-        for (Gene gene : orphanGenes) {
-            osw.delete(gene);
-        }
-        osw.commitTransaction();
-        LOG.info("Removed " + orphanGenes.size() + " Gene objects with empty proteins collection.");
-
-        // remove orphaned ontology terms
-        osw.beginTransaction();
-        for (OntologyTerm ontologyTerm : orphanOntologyTerms) {
-            osw.delete(ontologyTerm);
-        }
-        osw.commitTransaction();
-        LOG.info("Removed " + orphanOntologyTerms.size() + " OntologyTerm objects with no ontology reference.");
-
-        // remove orphaned proteins
-        osw.beginTransaction();
-        for (Protein protein : orphanProteins) {
-            osw.delete(protein);
-        }
-        osw.commitTransaction();
-        LOG.info("Removed " + orphanProteins.size() + " Protein objects with empty genes collection OR no transcript reference.");
-
         // remove orphaned transcripts
         osw.beginTransaction();
         for (Transcript transcript : orphanTranscripts) {
@@ -199,5 +153,57 @@ public class RemoveOrphansProcess extends PostProcessor {
         }
         osw.commitTransaction();
         LOG.info("Removed " + orphanTranscripts.size() + " Transcript objects with no protein reference or which lack both chromosome and supercontig reference.");
+
+        // find OntologyAnnotation objects referencing ontologyTerms with no ontology reference
+        Set<OntologyAnnotation> orphanOntologyAnnotations = new HashSet<>();
+        Query qOntologyAnnotation = new Query();
+        // OntologyAnnotation
+        QueryClass qcOntologyAnnotation = new QueryClass(OntologyAnnotation.class);
+        qOntologyAnnotation.addFrom(qcOntologyAnnotation);
+        qOntologyAnnotation.addToSelect(qcOntologyAnnotation);
+        // OntologyTerm
+        QueryClass qcOntologyTerm = new QueryClass(OntologyTerm.class);
+        qOntologyAnnotation.addFrom(qcOntologyTerm);
+        ConstraintSet ontologyAnnotationConstraints = new ConstraintSet(ConstraintOp.AND);
+        // OntologyAnnotation.ontologyTerm = OntologyTerm
+        ontologyAnnotationConstraints.addConstraint(new ContainsConstraint(new QueryObjectReference(qcOntologyAnnotation, "ontologyTerm"), ConstraintOp.CONTAINS, qcOntologyTerm));
+        // OntologyTerm.ontology is null
+        ontologyAnnotationConstraints.addConstraint(new ContainsConstraint(new QueryObjectReference(qcOntologyTerm, "ontology"), ConstraintOp.IS_NULL));
+        qOntologyAnnotation.setConstraint(ontologyAnnotationConstraints);
+        Results ontologyAnnotationResults = osw.getObjectStore().execute(qOntologyAnnotation);
+        for (Object obj : ontologyAnnotationResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            OntologyAnnotation ontologyAnnotation = (OntologyAnnotation) row.get(0);
+            orphanOntologyAnnotations.add(ontologyAnnotation);
+        }
+        // remove orphaned ontology annotations
+        osw.beginTransaction();
+        for (OntologyAnnotation ontologyAnnotation : orphanOntologyAnnotations) {
+            osw.delete(ontologyAnnotation);
+        }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanOntologyAnnotations.size() + " OntologyAnnotation objects which reference an ontologyTerm on a missing ontology.");
+
+        // find OntologyTerm objects with null ontology reference (includes some that aren't referenced in OntologyAnnotation)
+        Set<OntologyTerm> orphanOntologyTerms = new HashSet<>();
+        Query qOntologyTerm = new Query();
+        // qcOntologyTerm already defined above
+        qOntologyTerm.addFrom(qcOntologyTerm);
+        qOntologyTerm.addToSelect(qcOntologyTerm);
+        // OntologyTerm.ontology is null
+        qOntologyTerm.setConstraint(new ContainsConstraint(new QueryObjectReference(qcOntologyTerm, "ontology"), ConstraintOp.IS_NULL));
+        Results ontologyTermResults = osw.getObjectStore().execute(qOntologyTerm);
+        for (Object obj : ontologyTermResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            OntologyTerm ontologyTerm = (OntologyTerm) row.get(0);
+            orphanOntologyTerms.add(ontologyTerm);
+        }
+        // remove orphaned ontology terms
+        osw.beginTransaction();
+        for (OntologyTerm ontologyTerm : orphanOntologyTerms) {
+            osw.delete(ontologyTerm);
+        }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanOntologyTerms.size() + " OntologyTerm objects with null ontology reference.");
     }
 }
