@@ -167,6 +167,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             QueryClass qcGene = new QueryClass(Gene.class);
             qGene.addFrom(qcGene);
             qGene.addToSelect(qcGene);
+            qGene.addToOrderBy(new QueryField(qcGene, "primaryIdentifier"));
             QueryObjectReference chromosomeRef = new QueryObjectReference(qcGene, "chromosome");
             ContainsConstraint geneOnChromosomeConstraint = new ContainsConstraint(chromosomeRef, ConstraintOp.CONTAINS, chromosome);
             qGene.setConstraint(geneOnChromosomeConstraint);
@@ -190,7 +191,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
                 createIntergenicRegions(genes);
             }
         }
-        
+
         // create intergenic regions per supercontig
         // collect genes per supercontig/annotation since intergenic regions are annotation features
         for (Supercontig supercontig : supercontigsToProcess) {
@@ -199,6 +200,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             QueryClass qcGene = new QueryClass(Gene.class);
             qGene.addFrom(qcGene);
             qGene.addToSelect(qcGene);
+            qGene.addToOrderBy(new QueryField(qcGene, "primaryIdentifier"));
             QueryObjectReference supercontigRef = new QueryObjectReference(qcGene, "supercontig");
             ContainsConstraint geneOnSupercontigConstraint = new ContainsConstraint(supercontigRef, ConstraintOp.CONTAINS, supercontig);
             qGene.setConstraint(geneOnSupercontigConstraint);
@@ -236,7 +238,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             LOG.info("Storing " + intergenicRegions.size() + " IntergenicRegion and Location objects...");
             for (IntergenicRegion ir : intergenicRegions.values()) {
                 Location location = null;
-                if (ir.getChromosome() != null) {
+                if (onChromosome(ir)) {
                     location = ir.getChromosomeLocation();
                 } else {
                     location = ir.getSupercontigLocation();
@@ -269,46 +271,44 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
         List<Gene> forwardGenes = new ArrayList<>();
         List<Gene> reverseGenes = new ArrayList<>();
         for (Gene gene : genes.values()) {
-            if (onChromosome(gene)) {
-                if (gene.getChromosomeLocation().getStrand().equals("1")) {
-                    forwardGenes.add(gene);
-                } else {
-                    reverseGenes.add(gene);
-                }
+            if (onForwardStrand(gene)) {
+                forwardGenes.add(gene);
             } else {
-                if (gene.getSupercontigLocation().getStrand().equals("1")) {
-                    forwardGenes.add(gene);
-                } else {
-                    reverseGenes.add(gene);
-                }
+                reverseGenes.add(gene);
             }
         }
-        // form GenePairs on forward strand
-        final List<GenePair> forwardGenePairs = new ArrayList<>();
-        Gene preceding = null; // first has no preceding gene
-        for (Gene following : forwardGenes) {
-            forwardGenePairs.add(new GenePair(preceding, following));
-            preceding = following; // for next round
+        if (forwardGenes.size() > 0) {
+            // form GenePairs on forward strand
+            final List<GenePair> forwardGenePairs = new ArrayList<>();
+            Gene preceding = null; // first has no preceding gene
+            for (Gene following : forwardGenes) {
+                forwardGenePairs.add(new GenePair(preceding, following));
+                preceding = following; // for next round
+            }
+            forwardGenePairs.add(new GenePair(preceding, null)); // last has no following gene
+            //////////////////////////////////////////////////////////////////////////
+            forwardGenePairs.parallelStream().forEach(pair -> {
+                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
+                    if (ir != null) intergenicRegions.put(pair.key, ir);
+                });
+            //////////////////////////////////////////////////////////////////////////
         }
-        forwardGenePairs.add(new GenePair(preceding, null)); // last has no following gene
-        // form GenePairs on reverse strand
-        final List<GenePair> reverseGenePairs = new ArrayList<>();
-        preceding = null; // first has no preceding gene
-        for (Gene following : reverseGenes) {
-            reverseGenePairs.add(new GenePair(preceding, following));
-            preceding = following; // for next round
+        if (reverseGenes.size() > 0) {
+            // form GenePairs on reverse strand
+            final List<GenePair> reverseGenePairs = new ArrayList<>();
+            Gene preceding = null; // first has no preceding gene
+            for (Gene following : reverseGenes) {
+                reverseGenePairs.add(new GenePair(preceding, following));
+                preceding = following; // for next round
+            }
+            reverseGenePairs.add(new GenePair(preceding, null)); // last has no following gene
+            //////////////////////////////////////////////////////////////////////////
+            reverseGenePairs.parallelStream().forEach(pair -> {
+                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
+                    if (ir != null) intergenicRegions.put(pair.key, ir);
+                });
+            //////////////////////////////////////////////////////////////////////////
         }
-        reverseGenePairs.add(new GenePair(preceding, null)); // last has no following gene
-        //////////////////////////////////////////////////////////////////////////
-        forwardGenePairs.parallelStream().forEach(pair -> {
-                IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
-                if (ir != null) intergenicRegions.put(pair.key, ir);
-            });
-        reverseGenePairs.parallelStream().forEach(pair -> {
-                IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
-                if (ir != null) intergenicRegions.put(pair.key, ir);
-            });
-        //////////////////////////////////////////////////////////////////////////
     }
 
     /**
@@ -470,6 +470,30 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
     }
 
     /**
+     * Return true if the provided intergenic region is on a Chromosome (not a Supercontig).
+     *
+     * @param gene a IntergenicRegion object
+     * @return true if the region is on a Chromosome
+     */
+    static boolean onChromosome(IntergenicRegion region) {
+        return (region.getChromosome() != null);
+    }
+
+    /**
+     * Return true if the given gene is on the forward strand.
+     *
+     * @param gene a Gene object
+     * @return true if the gene is on the forward strand
+     */
+    static boolean onForwardStrand(Gene gene) {
+        if (onChromosome(gene)) {
+            return (gene.getChromosomeLocation().getStrand() == null || gene.getChromosomeLocation().getStrand().equals("1"));
+        } else {
+            return (gene.getSupercontigLocation().getStrand() == null || gene.getSupercontigLocation().getStrand().equals("1"));
+        }
+    }
+
+    /**
      * Encapsulates the pair of genes around an intergenic region.
      * Either one (but not both) may be null at the beginning/end of the chromosome/supercontig.
      * Both genes must be on same strand!
@@ -484,5 +508,5 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             key = formPrimaryIdentifier(this);
         }
     }
-    
+
 }
