@@ -110,7 +110,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             chromosomesToSkip.add(chromosome);
         }
 
-        // query supercontigs that CONTAIN IntergenicRegions to SKIP processing thme
+        // query supercontigs that CONTAIN IntergenicRegions to SKIP processing them
         Set<Supercontig> supercontigsToSkip = new HashSet<>();
         Query qSupercontig = new Query();
         QueryClass qcSupercontig = new QueryClass(Supercontig.class);
@@ -265,20 +265,50 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
      * @return a Set of IntergenicRegions
      */
     void createIntergenicRegions(TreeMap<Integer,Gene> genes) {
-        // create a List of GenePair objects for processing
-        final List<GenePair> genePairs = new ArrayList<>();
+        // create a List of strand-specific GenePair objects for processing
+        List<Gene> forwardGenes = new ArrayList<>();
+        List<Gene> reverseGenes = new ArrayList<>();
+        for (Gene gene : genes.values()) {
+            if (onChromosome(gene)) {
+                if (gene.getChromosomeLocation().getStrand().equals("1")) {
+                    forwardGenes.add(gene);
+                } else {
+                    reverseGenes.add(gene);
+                }
+            } else {
+                if (gene.getSupercontigLocation().getStrand().equals("1")) {
+                    forwardGenes.add(gene);
+                } else {
+                    reverseGenes.add(gene);
+                }
+            }
+        }
+        // form GenePairs on forward strand
+        final List<GenePair> forwardGenePairs = new ArrayList<>();
         Gene preceding = null; // first has no preceding gene
-        for (Gene following : genes.values()) {
-            genePairs.add(new GenePair(preceding, following));
+        for (Gene following : forwardGenes) {
+            forwardGenePairs.add(new GenePair(preceding, following));
             preceding = following; // for next round
         }
-        genePairs.add(new GenePair(preceding, null)); // last has no following gene
-        //////////////////////////////////////////////////////////////////
-        genePairs.parallelStream().forEach(pair -> {
+        forwardGenePairs.add(new GenePair(preceding, null)); // last has no following gene
+        // form GenePairs on reverse strand
+        final List<GenePair> reverseGenePairs = new ArrayList<>();
+        preceding = null; // first has no preceding gene
+        for (Gene following : reverseGenes) {
+            reverseGenePairs.add(new GenePair(preceding, following));
+            preceding = following; // for next round
+        }
+        reverseGenePairs.add(new GenePair(preceding, null)); // last has no following gene
+        //////////////////////////////////////////////////////////////////////////
+        forwardGenePairs.parallelStream().forEach(pair -> {
                 IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
-                intergenicRegions.put(pair.key, ir);
+                if (ir != null) intergenicRegions.put(pair.key, ir);
             });
-        //////////////////////////////////////////////////////////////////
+        reverseGenePairs.parallelStream().forEach(pair -> {
+                IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
+                if (ir != null) intergenicRegions.put(pair.key, ir);
+            });
+        //////////////////////////////////////////////////////////////////////////
     }
 
     /**
@@ -295,34 +325,34 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
         } else {
             gene = pair.following;
         }
-        // determine whether we're on a Chromosome or Supercontig
-        boolean onChromosome = (gene.getChromosome() != null);
         // region start and end
         int start = 0;
         if (pair.preceding == null) {
             start = 1;
-        } else if (onChromosome) {
+        } else if (onChromosome(gene)) {
             start = pair.preceding.getChromosomeLocation().getEnd() + 1;
         } else {
             start = pair.preceding.getSupercontigLocation().getEnd() + 1;
         }
         int end = 0;
-        if (pair.following == null && onChromosome) {
+        if (pair.following == null && onChromosome(gene)) {
             end = pair.preceding.getChromosome().getLength();
         } else if (pair.following == null) {
             end = pair.preceding.getSupercontig().getLength();
-        } else if (onChromosome) {
+        } else if (onChromosome(gene)) {
             end = pair.following.getChromosomeLocation().getStart() - 1;
         } else {
             end = pair.following.getSupercontigLocation().getStart() - 1;
         }
+        // this happpens when two genes overlap on the same strand
+        if (start >= end) return null;
         // create Location
         Location location = (Location) DynamicUtil.createObject(Collections.singleton(Location.class));
         location.setStart(start);
         location.setEnd(end);
         location.setStrand("1");
         location.addDataSets(dataSet);
-        if (onChromosome) {
+        if (onChromosome(gene)) {
             location.setLocatedOn(gene.getChromosome());
         } else {
             location.setLocatedOn(gene.getSupercontig());
@@ -330,7 +360,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
         // create IntergenicRegion
         IntergenicRegion intergenicRegion = (IntergenicRegion) DynamicUtil.createObject(Collections.singleton(IntergenicRegion.class));
         location.setFeature(intergenicRegion);
-        if (onChromosome) {
+        if (onChromosome(gene)) {
             intergenicRegion.setChromosomeLocation(location);
             intergenicRegion.setChromosome(gene.getChromosome());
             intergenicRegion.setOrganism(gene.getChromosome().getOrganism());
@@ -430,8 +460,19 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
     }
 
     /**
+     * Return true if the provided gene is on a Chromosome (not a Supercontig).
+     *
+     * @param gene a Gene object
+     * @return true if the Gene is on a Chromosome
+     */
+    static boolean onChromosome(Gene gene) {
+        return (gene.getChromosome() != null);
+    }
+
+    /**
      * Encapsulates the pair of genes around an intergenic region.
      * Either one (but not both) may be null at the beginning/end of the chromosome/supercontig.
+     * Both genes must be on same strand!
      */
     static class GenePair {
         Gene preceding; // the gene preceding the intergenic region
