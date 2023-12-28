@@ -42,6 +42,7 @@ import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.OntologyAnnotation;
 import org.intermine.model.bio.OntologyTerm;
 import org.intermine.model.bio.Protein;
+import org.intermine.model.bio.ProteinDomain;
 import org.intermine.model.bio.Transcript;
 
 import org.apache.log4j.Logger;
@@ -54,6 +55,7 @@ import org.apache.log4j.Logger;
  *   - Transcript with null protein reference or null chromosome/supercontig reference
  *   - OntologyAnnotation with ontologyTerm reference to a term with null ontology reference
  *   - OntologyTerm with null ontology reference
+ *   - ProteinDomain with null name or description
  *
  * @author Sam Hokin
  */
@@ -205,5 +207,29 @@ public class RemoveOrphansProcess extends PostProcessor {
         }
         osw.commitTransaction();
         LOG.info("Removed " + orphanOntologyTerms.size() + " OntologyTerm objects with null ontology reference.");
+
+        // find ProteinDomain objects with null name or description
+        Set<ProteinDomain> orphanProteinDomains = new HashSet<>();
+        Query qProteinDomain = new Query();
+        QueryClass qcProteinDomain = new QueryClass(ProteinDomain.class);
+        qProteinDomain.addFrom(qcProteinDomain);
+        qProteinDomain.addToSelect(qcProteinDomain);
+        ConstraintSet proteinDomainConstraints = new ConstraintSet(ConstraintOp.OR);
+        proteinDomainConstraints.addConstraint(new SimpleConstraint(new QueryField(qcProteinDomain, "name"), ConstraintOp.IS_NULL));
+        proteinDomainConstraints.addConstraint(new SimpleConstraint(new QueryField(qcProteinDomain, "description"), ConstraintOp.IS_NULL));
+        qProteinDomain.setConstraint(proteinDomainConstraints);
+        Results proteinDomainResults = osw.getObjectStore().execute(qProteinDomain);
+        for (Object obj : proteinDomainResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            ProteinDomain proteinDomain = (ProteinDomain) row.get(0);
+            orphanProteinDomains.add(proteinDomain);
+        }
+        // remove orphaned proteinDomains
+        osw.beginTransaction();
+        for (ProteinDomain proteinDomain : orphanProteinDomains) {
+            osw.delete(proteinDomain);
+        }
+        osw.commitTransaction();
+        LOG.info("Removed " + orphanProteinDomains.size() + " ProteinDomain objects with null name OR null description.");
     }
 }
