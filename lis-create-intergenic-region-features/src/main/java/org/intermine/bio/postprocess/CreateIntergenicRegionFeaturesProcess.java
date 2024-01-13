@@ -22,6 +22,7 @@ import org.intermine.model.bio.DataSource;
 import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.IntergenicRegion;
 import org.intermine.model.bio.Location;
+import org.intermine.model.bio.SOTerm;
 import org.intermine.model.bio.Supercontig;
     
 import org.intermine.objectstore.ObjectStore;
@@ -53,6 +54,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
     Model model;
     DataSet dataSet;
     DataSource dataSource;
+    SOTerm soTerm;
     boolean storeDataSource = false;
     
     ConcurrentHashMap<String,IntergenicRegion> intergenicRegions = new ConcurrentHashMap<>(); // keyed by GenePair.key
@@ -78,12 +80,16 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             storeDataSource = false;
         }
         // DataSet version is a timestamp
-        this.dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
-        this.dataSet.setName("InterMine intergenic regions");
-        this.dataSet.setDescription("Intergenic regions created by the InterMine core post-processor");
-        this.dataSet.setVersion("" + new Date()); // current time and date
-        this.dataSet.setUrl("http://www.intermine.org");
-        this.dataSet.setDataSource(dataSource);
+        dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
+        dataSet.setName("InterMine intergenic regions");
+        dataSet.setDescription("Intergenic regions created by the InterMine core post-processor");
+        dataSet.setVersion("" + new Date()); // current time and date
+        dataSet.setUrl("http://www.intermine.org");
+        dataSet.setDataSource(dataSource);
+        // SOTerm should already exist
+        SOTerm tempSOTerm = (SOTerm) DynamicUtil.createObject(Collections.singleton(SOTerm.class));
+        tempSOTerm.setName("intergenic_region");
+        soTerm = os.getObjectByExample(tempSOTerm, Collections.singleton("name"));
     }
 
     /**
@@ -288,7 +294,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             forwardGenePairs.add(new GenePair(preceding, null)); // last has no following gene
             //////////////////////////////////////////////////////////////////////////
             forwardGenePairs.parallelStream().forEach(pair -> {
-                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
+                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet, soTerm);
                     if (ir != null) intergenicRegions.put(pair.key, ir);
                 });
             //////////////////////////////////////////////////////////////////////////
@@ -304,7 +310,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
             reverseGenePairs.add(new GenePair(preceding, null)); // last has no following gene
             //////////////////////////////////////////////////////////////////////////
             reverseGenePairs.parallelStream().forEach(pair -> {
-                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet);
+                    IntergenicRegion ir = createIntergenicRegion(pair, dataSet, soTerm);
                     if (ir != null) intergenicRegions.put(pair.key, ir);
                 });
             //////////////////////////////////////////////////////////////////////////
@@ -317,7 +323,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
      * @param pair a GenePair surrounding the intergenic region to be created
      * @return an IntergenicRegion object
      */
-    static IntergenicRegion createIntergenicRegion(GenePair pair, DataSet dataSet) {
+    static IntergenicRegion createIntergenicRegion(GenePair pair, DataSet dataSet, SOTerm soTerm) {
         // get a Gene that isn't null
         Gene gene = null;
         if (pair.preceding != null) {
@@ -383,6 +389,7 @@ public class CreateIntergenicRegionFeaturesProcess extends PostProcessor {
         } else {
             intergenicRegion.setDescription("Intergenic region between " + pair.preceding.getName() + " and " + pair.following.getName());
         }
+        intergenicRegion.setSequenceOntologyTerm(soTerm);
         intergenicRegion.addDataSets(dataSet);
         intergenicRegion.setLength(location.getEnd() - location.getStart() + 1);
         // adjacent genes
