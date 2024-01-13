@@ -194,8 +194,8 @@ public class RemoveOrphansProcess extends PostProcessor {
         qOntologyTerm.addToSelect(qcOntologyTerm);
         // OntologyTerm.ontology is null
         qOntologyTerm.setConstraint(new ContainsConstraint(new QueryObjectReference(qcOntologyTerm, "ontology"), ConstraintOp.IS_NULL));
-        Results ontologyTermResults = osw.getObjectStore().execute(qOntologyTerm);
-        for (Object obj : ontologyTermResults.asList()) {
+        Results orphanOntologyTermResults = osw.getObjectStore().execute(qOntologyTerm);
+        for (Object obj : orphanOntologyTermResults.asList()) {
             ResultsRow row = (ResultsRow) obj;
             OntologyTerm ontologyTerm = (OntologyTerm) row.get(0);
             orphanOntologyTerms.add(ontologyTerm);
@@ -207,6 +207,35 @@ public class RemoveOrphansProcess extends PostProcessor {
         }
         osw.commitTransaction();
         LOG.info("Removed " + orphanOntologyTerms.size() + " OntologyTerm objects with null ontology reference.");
+
+        // update ontology term crossReferences to only cross-reference non-orphans
+        Set<OntologyTerm> updatedOntologyTerms = new HashSet<>();
+        // OntologyTerm.crossReferences is NOT empty
+        qOntologyTerm.setConstraint(new ContainsConstraint(new QueryCollectionReference(qcOntologyTerm, "crossReferences"), ConstraintOp.IS_NOT_NULL));
+        Results updatedOntologyTermResults = osw.getObjectStore().execute(qOntologyTerm);
+        for (Object obj : updatedOntologyTermResults.asList()) {
+            ResultsRow row = (ResultsRow) obj;
+            OntologyTerm ontologyTerm = (OntologyTerm) row.get(0);
+            updatedOntologyTerms.add(ontologyTerm);
+        }
+        // load a map of sets of cross-references
+        Map<OntologyTerm, Set<OntologyTerm>> crossReferencesMap = new ConcurrentHashMap<>();
+        ////////////////////////////////////////////////////////////////////
+        updatedOntologyTerms.parallelStream().forEach(ontologyTerm -> {
+                Set<OntologyTerm> crossReferences = new HashSet<>();
+                for (OntologyTerm crossReference : ontologyTerm.getCrossReferences()) {
+                    if (!orphanOntologyTerms.contains(crossReference)) crossReferences.add(crossReference);
+                }
+                crossReferencesMap.put(ontologyTerm, crossReferences);
+            });
+        ////////////////////////////////////////////////////////////////////
+        // now update the cross-references
+        osw.beginTransaction();
+        for (OntologyTerm ontologyTerm : crossReferencesMap.keySet()) {
+            ontologyTerm.setCrossReferences(crossReferencesMap.get(ontologyTerm));
+        }
+        osw.commitTransaction();
+        LOG.info("Updated " + updatedOntologyTerms.size() + " OntologyTerm cross-references to reference non-orphan terms.");
 
         // find ProteinDomain objects with null name or description
         Set<ProteinDomain> orphanProteinDomains = new HashSet<>();
