@@ -33,6 +33,7 @@ import org.intermine.model.bio.DataSet;
 import org.intermine.model.bio.DataSource;
 import org.intermine.model.bio.Gene;
 import org.intermine.model.bio.Pathway;
+import org.intermine.model.bio.Publication;
 
 import org.intermine.postprocess.PostProcessor;
 
@@ -54,15 +55,36 @@ import org.apache.log4j.Logger;
 /**
  * Populate the Pathways class and Gene.pathways collections from Plant Reactome entries, if present.
  * IMPORTANT: LIS gene names are munged into Plant Reactome gene names in a method that MUST BE UPDATED REGULARLY!
- * NOTE: update PLANT_REACTOME_VERSION when the gene file is updated!
+ *
+ * NOTE: update PLANT_REACTOME_VERSION HERE when the gene file is updated!
  *
  * @author Sam Hokin
  */
 public class CreatePathwaysProcess extends PostProcessor {
 
     private static final Logger LOG = Logger.getLogger(CreatePathwaysProcess.class);
-    public static final String PLANT_REACTOME_GENE_FILE = "gene_ids_by_pathway_and_species.tab";
+
+    // UPDATE WHEN THE GENE FILE IS UPDATED!
     public static final String PLANT_REACTOME_VERSION = "Version 23 (Gramene 67)";
+    //
+    public static final String PLANT_REACTOME_GENE_FILE = "gene_ids_by_pathway_and_species.tab";
+    public static final String PLANT_REACTOME_NAME = "Plant Reactome";
+    public static final String PLANT_REACTOME_URL = "https://plantreactome.gramene.org/";
+    public static final String PLANT_REACTOME_LICENCE = "CC BY 3.0";
+    public static final String PLANT_REACTOME_DESCRIPTION = "PLANT REACTOME is an open-source, open access, manually curated and peer-reviewed pathway database. " +
+        "Pathway annotations are authored by expert biologists, in collaboration with the Reactome editorial " +
+        "staff and cross-referenced to many bioinformatics databases. " +
+        "These include project databases like Gramene, Ensembl, UniProt, ChEBI small molecule databases, " +
+        "PubMed, and Gene Ontology.";
+
+    public static final String PLANT_REACTOME_PUB_TITLE = "Plant Reactome: a knowledgebase and resource for comparative pathway analysis.";
+    public static final String PLANT_REACTOME_PUB_FIRST_AUTHOR = "Naithani S";
+    public static final int PLANT_REACTOME_PUB_YEAR = 2020;
+    public static final String PLANT_REACTOME_PUB_JOURNAL = "Nucleic Acids Research";
+    public static final String PLANT_REACTOME_PUB_DOI = "10.1093/nar/gkz996";
+    public static final String PLANT_REACTOME_PUB_AUTHORS = "Naithani S,  Gupta P, Preece J, D’Eustachio P,  Elser J, Garg P, Dikeman DA, " +
+        "Kiff J, Cook J, Olson A,  Wei S, Tello-Ruiz MK,  Mundo  AF, Munoz-Pomer A,  Mohammed S, Cheng T,  Bolton E, Papatheodorou I, " +
+        "Stein L, Ware D, and  Jaiswal P.";
 
     /**
      * Populate a new instance of CreatePathwaysProcess
@@ -124,6 +146,39 @@ public class CreatePathwaysProcess extends PostProcessor {
         } else {
             LOG.info("Using existing Gramene DataSource.");
         }
+
+        // get the existing Plant Reactome publication, if present
+        Query qPublication = new Query();
+        QueryClass qcPublication = new QueryClass(Publication.class);
+        qPublication.addFrom(qcPublication);
+        qPublication.addToSelect(qcPublication);
+        QueryField publicationDOIField = new QueryField(qcPublication, "doi");
+        QueryValue publicationDOIValue = new QueryValue(PLANT_REACTOME_PUB_DOI);
+        qPublication.setConstraint(new SimpleConstraint(publicationDOIValue, ConstraintOp.EQUALS, publicationDOIField));
+        // execute the query, populating Publication if present
+        Publication tempPublication = null;
+        Results publicationResults = osw.getObjectStore().execute(qPublication);
+	for (Object resultObject : publicationResults.asList()) {
+	    ResultsRow row = (ResultsRow) resultObject;
+            tempPublication = (Publication) row.get(0);
+	}
+        // create and store the Gramene Publication if not already present
+        if (tempPublication == null) {
+            tempPublication = (Publication) DynamicUtil.createObject(Collections.singleton(Publication.class));
+            tempPublication.setYear(PLANT_REACTOME_PUB_YEAR);
+            tempPublication.setTitle(PLANT_REACTOME_PUB_TITLE);
+            tempPublication.setDoi(PLANT_REACTOME_PUB_DOI);
+            tempPublication.setJournal(PLANT_REACTOME_PUB_JOURNAL);
+            tempPublication.setFirstAuthor(PLANT_REACTOME_PUB_FIRST_AUTHOR);
+            osw.beginTransaction();
+            osw.store(tempPublication);
+            osw.commitTransaction();
+            LOG.info("Stored new Plant Reactome Publication.");
+        } else {
+            LOG.info("Using existing Plant Reactome Publication.");
+        }
+        // need final for lambda expression below
+        final Publication publication = tempPublication;
         
         // delete the existing Plant Reactome DataSet, if present, since version may have changed
         Query qDataSet = new Query();
@@ -148,15 +203,12 @@ public class CreatePathwaysProcess extends PostProcessor {
         LOG.info("Deleted " + oldDataSets.size() + " Plant Reactome DataSet objects.");
         
         // create and store the new Plant Reactome DataSet
-        DataSet dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
-        dataSet.setName("Plant Reactome");
-        dataSet.setUrl("https://plantreactome.gramene.org/");
-        dataSet.setDescription("PLANT REACTOME is an open-source, open access, manually curated and peer-reviewed pathway database. " +
-                               "Pathway annotations are authored by expert biologists, in collaboration with the Reactome editorial " +
-                               "staff and cross-referenced to many bioinformatics databases. " +
-                               "These include project databases like Gramene, Ensembl, UniProt, ChEBI small molecule databases, " +
-                               "PubMed, and Gene Ontology.");
-        dataSet.setLicence("CC BY 3.0");
+        final DataSet dataSet = (DataSet) DynamicUtil.createObject(Collections.singleton(DataSet.class));
+        dataSet.setPublication(publication);
+        dataSet.setName(PLANT_REACTOME_NAME);
+        dataSet.setUrl(PLANT_REACTOME_URL);
+        dataSet.setDescription(PLANT_REACTOME_DESCRIPTION);
+        dataSet.setLicence(PLANT_REACTOME_LICENCE);
         dataSet.setVersion(PLANT_REACTOME_VERSION);
         dataSet.setDataSource(dataSource);
         osw.beginTransaction();
@@ -229,6 +281,7 @@ public class CreatePathwaysProcess extends PostProcessor {
                 pathway.setPrimaryIdentifier(identifier);
                 pathway.setName(pathwayIdentifierName.get(identifier));
                 pathway.addDataSets(dataSet);
+                pathway.addPublications(publication);
                 pathways.put(identifier, pathway);
             });
         ///////////////////////////////////////////////////////////////////////////////////////////////
